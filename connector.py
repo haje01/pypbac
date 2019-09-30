@@ -43,7 +43,7 @@ class ConfigDlg(tkSimpleDialog.Dialog):
 
     def body(self, master):
 
-        self.need_restart = False
+        self.applied = self.need_restart = False
 
         Label(master, text="Access Key :").grid(row=0)
         Label(master, text="Secret Key :").grid(row=1)
@@ -76,7 +76,7 @@ class ConfigDlg(tkSimpleDialog.Dialog):
 
         if len(access_key) == 0:
             messagebox.showerror("Error", "Access Key를 입력해주세요.")
-            self.initial_focus = self.sckey
+            self.initial_focus = self.ackey
             return 0
 
         if len(secret_key) == 0:
@@ -86,7 +86,7 @@ class ConfigDlg(tkSimpleDialog.Dialog):
 
         if len(s3_stage_dir) == 0:
             messagebox.showerror("Error", "S3 Stage 경로를 입력해주세요.")
-            self.initial_focus = self.sckey
+            self.initial_focus = self.s3dir
             return 0
 
         return 1
@@ -102,6 +102,7 @@ class ConfigDlg(tkSimpleDialog.Dialog):
             if need_restart:
                 messagebox.showwarning("경고", "설정이 변경되었습니다. 재시작이 필요합니다.")
                 self.need_restart = True
+        self.applied = True
 
 
 win = Tk()
@@ -114,6 +115,7 @@ def show_config():
 
 
 cfg_path = get_cfg_path()
+need_exit = False
 if os.path.isfile(cfg_path):
     try:
         cfg.read(cfg_path)
@@ -121,10 +123,16 @@ if os.path.isfile(cfg_path):
     except Exception as e:
         messagebox.showerror("에러", "잘못된 설정파일입니다.\n프로그램 종료후 다시 시작해주세요.")
         os.unlink(cfg_path)
-        win.destroy()
+        need_exit = True
 else:
     messagebox.showwarning("경고", "설정파일이 없습니다. 먼저 설정을 해주세요.")
-    show_config()
+    d = show_config()
+    if not d.applied:
+        need_exit = True
+
+if need_exit:
+    win.destroy()
+    sys.exit(0)
 
 
 # 설정 정보를 이용해 접속
@@ -137,7 +145,10 @@ try:
     cursor = conn.cursor()
     databases = cursor.execute('show databases').fetchall()
 except Exception as e:
-    messagebox.showerror("에러", "DB 접속 에러 :\n{}".format(e))
+    print("=== DB Error Message ===")
+    print(e)
+    messagebox.showerror("에러", "DB 접속 에러. config.ini 파일 내용을 "
+                         "확인해 주세요.")
 
 
 def get_tables(db):
