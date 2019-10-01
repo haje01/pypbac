@@ -18,7 +18,7 @@ from datepicker import Datepicker
 from vscroll import VerticalScrolledFrame
 import tkSimpleDialog
 
-CFG_NAME = 'config.ini'
+CFG_FILE = 'config.txt'
 WIN_WIDTH = 370
 WIN_HEIGHT = 570
 WARN_ROWS = 1000000  # 이 행수 이상 경고
@@ -30,7 +30,7 @@ cfg = ConfigParser()
 def get_cfg_path():
     """설정파일 경로."""
     adir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(adir, CFG_NAME)
+    return os.path.join(adir, CFG_FILE)
 
 
 def save_config():
@@ -161,8 +161,8 @@ try:
 except Exception as e:
     print("=== DB Error Message ===")
     print(e)
-    messagebox.showerror("에러", "DB 접속 에러. config.ini 파일 내용을 "
-                         "확인해 주세요.")
+    messagebox.showerror("에러", "DB 접속 에러. {} 파일 내용을 확인해 주세요."
+                         .format(CFG_FILE))
 
 
 def get_tables(db):
@@ -375,7 +375,8 @@ def on_import():
         return
     
     set_wait_cursor()
-    import_btn['state'] = DISABLED
+    disable_targets()
+    import_btn['state'] = 'disabled'
     start_dt, end_dt, db, tables = rv
 
     def _import():
