@@ -1,5 +1,7 @@
+print("Import modules.")
 import os
 import sys
+import time
 from datetime import date
 from configparser import ConfigParser
 from dateutil.parser import parse
@@ -23,6 +25,7 @@ WARN_ROWS = 1000000  # 이 행수 이상 경고
 conn = cursor = databases = org_cfg = None
 
 cfg = ConfigParser()
+
 
 def get_cfg_path():
     """설정파일 경로."""
@@ -105,9 +108,19 @@ class ConfigDlg(tkSimpleDialog.Dialog):
         self.applied = True
 
 
+print("Construct GUI.")
 win = Tk()
 win.title("Athena 데이터 임포터")
 win.geometry("{}x{}+100+100".format(WIN_WIDTH, WIN_HEIGHT))
+
+
+def set_wait_cursor():
+    win.config(cursor='wait')
+    win.update_idletasks()
+
+
+def unset_wait_cursor():
+    win.config(cursor='')
 
 
 def show_config():
@@ -136,12 +149,13 @@ if need_exit:
 
 
 # 설정 정보를 이용해 접속
-conn = connect(aws_access_key_id=cfg['aws']['access_key'],
-                aws_secret_access_key=cfg['aws']['secret_key'],
-                s3_staging_dir=cfg['aws']['s3_stage_dir'],
-                region_name='ap-northeast-2')
-
+print("Connect.")
 try:
+    conn = connect(aws_access_key_id=cfg['aws']['access_key'],
+        aws_secret_access_key=cfg['aws']['secret_key'],
+        s3_staging_dir=cfg['aws']['s3_stage_dir'],
+        region_name='ap-northeast-2')
+
     cursor = conn.cursor()
     databases = cursor.execute('show databases').fetchall()
 except Exception as e:
@@ -188,9 +202,16 @@ db_combo = ttk.Combobox(db_frame, width=20, textvariable=StringVar(),
 
 
 def on_db_sel(eobj):
-    db = db_combo.get()
-    tables = get_tables(db)
-    fill_tables(tables)
+    set_wait_cursor()
+    disable_controls()
+    def _db_set():
+        db = db_combo.get()
+        print("Read tables for '{}'.".format(db))
+        tables = get_tables(db)
+        fill_tables(tables)
+        enable_controls()
+        unset_wait_cursor()
+    win.after(10, _db_set)
 
 
 db_combo.bind("<<ComboboxSelected>>", on_db_sel)
@@ -251,11 +272,26 @@ def on_none():
 
 
 tbb_frame = Frame(win)
-all_btn = ttk.Button(tbb_frame, text="전체 선택", width=7, command=on_all)
+all_btn = ttk.Button(tbb_frame, text="전체 선택", width=8, command=on_all)
 all_btn.pack(side=LEFT, expand=YES)
-none_btn = ttk.Button(tbb_frame, text="전체 취소", width=7, command=on_none)
+none_btn = ttk.Button(tbb_frame, text="전체 취소", width=8, command=on_none)
 none_btn.pack(side=LEFT, expand=YES)
 tbb_frame.pack(fill=BOTH, expand=YES)
+
+disable_targets = [st_dp, ed_dp, all_btn, none_btn]
+disable_targets += [ckb for ckb in tbl_ckbs]
+
+
+def disable_controls():
+    for ctl in disable_targets:
+        ctl['state'] = 'disabled'
+    win.update_idletasks()
+
+
+def enable_controls():
+    for ctl in disable_targets:
+        ctl['state'] = 'normal'
+    db_combo['state'] = 'readonly'
 
 
 def get_sel_tables():
@@ -337,29 +373,33 @@ def on_import():
     rv = validate()
     if rv is None:
         return
+    
+    set_wait_cursor()
+    import_btn['state'] = DISABLED
     start_dt, end_dt, db, tables = rv
 
-    # 먼저 가져올 행수를 체크
-    rows = {}
-    for tbl in tables:
-        cnt = get_query_rows(start_dt, end_dt, db, tbl)
-        if cnt > WARN_ROWS:
-            rv = messagebox.askquestion("경고", "가져올 행수가 매우 큽니다 ({:,} 행)."
-                                        "\n정말 가져오겠습니까?".format(cnt))
-            if rv != 'yes':
-                return
-        rows[tbl] = cnt
+    def _import():
+        # 먼저 가져올 행수를 체크
+        rows = {}
+        for tbl in tables:
+            cnt = get_query_rows(start_dt, end_dt, db, tbl)
+            if cnt > WARN_ROWS:
+                rv = messagebox.askquestion("경고", "가져올 행수가 매우 큽니다 ({:,} 행)."
+                                            "\n정말 가져오겠습니까?".format(cnt))
+                if rv != 'yes':
+                    return
+            rows[tbl] = cnt
 
-    for tbl in tables:
-        cnt = rows[tbl]
-        print("\nImport '{}' ({:,} rows) from '{}'".format(tbl, cnt, db))
-        query = make_query(start_dt, end_dt, db, tbl, False)
-        df = pd.read_sql(query, conn)
-        print(df.head())
-        globals()[tbl] = df
-
-    win.destroy()
-
+        for tbl in tables:
+            cnt = rows[tbl]
+            print("\nImport '{}' ({:,} rows) from '{}'".format(tbl, cnt, db))
+            query = make_query(start_dt, end_dt, db, tbl, False)
+            df = pd.read_sql(query, conn)
+            print(df.head())
+            globals()[tbl] = df
+        unset_wait_cursor()
+        win.destroy()
+    win.after(100, _import)
 
 confirm_frame = Frame(win)
 cfg_btn = ttk.Button(confirm_frame, text="설정", width=5, command=on_cfg)
@@ -378,7 +418,6 @@ if 'win' not in sys.platform:
 
 db_combo.current(0)
 on_db_sel(None)
-
 
 win.mainloop()
 

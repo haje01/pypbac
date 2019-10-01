@@ -134,8 +134,8 @@ class Calendar(ttk.Frame):
         # adjust its columns width
         font = tkFont.Font()
         maxwidth = max(font.measure(text) for text in days_of_the_week)
-        for i in range(7):
-            self.grid_columnconfigure(i, minsize=maxwidth, weight=1)
+        # for i in range(7):
+        #     self.grid_columnconfigure(i, minsize=maxwidth, weight=1)
 
         self._year = None
         self._month = None
