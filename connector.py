@@ -4,15 +4,12 @@ warnings.filterwarnings('ignore')  # disable warning for dist binary.
 import sys
 import platform
 
-with open('c:/Users/haje0/log.txt', 'at') as f:
-    f.write("sys.argv {}".format(sys.argv))
-
 if len(sys.argv) > 1 and sys.argv[1] == '-V':
     print("Python {}".format(platform.python_version()))
     sys.exit()
 
 
-## -----------------------------------
+# 여기서 부터 시작 ---------------------------------
 
 import os
 import sys
@@ -26,7 +23,11 @@ from copy import deepcopy
 from shutil import rmtree, copyfile
 from pathlib import Path
 import logging
+import hashlib
+
+import pandas as pd
 from dateutil.parser import parse
+from pyathena import connect
 
 LOG_FILE = 'log.txt'
 PBTDIR_PTRN = r"os.chdir\((?:u')?(.*)(?:')\)"
@@ -36,9 +37,9 @@ WIN_HEIGHT = 610
 RESULT_VALID_TIME = 60  # 이전 결과를 재활용할 시간 (Power BI에서 파이썬을 계속 띄우는 문제 때문)
 WARN_ROWS = 1000000  # 이 행수 이상 경고
 
-conn = cursor = databases = org_cfg = None
+conn = cursor = databases = org_cfg = cfg_hash = None
 pbt_dir = None
-profile = 'pro_default'
+profile = 'profile.default'
 selected_tables = {}
 first_sel_db = first_sel_db_idx = None
 
@@ -46,15 +47,20 @@ first_sel_db = first_sel_db_idx = None
 # 로그파일 초기화
 home_dir = os.path.expanduser('~')
 pypbac_dir = os.path.join(home_dir, ".pypbac")
-result_dir = os.path.join(pypbac_dir, 'result')
+cache_dir = os.path.join(pypbac_dir, 'cache')
+pcache_dir = os.path.join(cache_dir, 'default')
 log_path = os.path.join(pypbac_dir, LOG_FILE)
 cfg_path = os.path.join(pypbac_dir, CFG_FILE)
-done_path = os.path.join(pypbac_dir, 'done')
+meta_path = os.path.join(pcache_dir, 'metadata.txt')
 
+# 필요한 디렉토리 생성
 if not os.path.isdir(pypbac_dir):
     os.mkdir(pypbac_dir)
-if not os.path.isdir(result_dir):
-    os.mkdir(result_dir)
+if not os.path.isdir(cache_dir):
+    os.mkdir(cache_dir)
+if not os.path.isdir(pcache_dir):
+    os.mkdir(pcache_dir)
+
 
 logging.basicConfig(
      filename=log_path,
@@ -89,66 +95,267 @@ def error(msg):
 def critical(mst):
     logger.critical(mst)
 
-
-critical("======== PyPBAC Start ========")
+# Power BI에서 실행 여부 \
+POWER_BI = len(sys.argv) > 1 and sys.argv[1].lower() == 'pythonscriptwrapper.py'
+start_mode = 'Setting GUI' if not POWER_BI else 'Power BI'
+critical("======== PyPBAC Start ({}) ========".format(start_mode))
 warning("Start up argv: {}".format(sys.argv))
 warning("Project Dir: {}".format(pypbac_dir))
 
-# Power BI에서 실행 여부 
-POWER_BI = sys.argv[0].endswith('python.exe')
 
-if POWER_BI:
-    arg = sys.argv[1]
-    if arg.lower() == 'pythonscriptwrapper.py':
-        with codecs.open(arg, 'r', encoding='utf-8') as fp:
-            wrapper = fp.read()
-
-        try:
-            pbt_dir = re.search(PBTDIR_PTRN, wrapper).groups()[0]
-        except Exception as e:
-            error("Can't find Working Directory at PythonScriptWrapper.py:")
-            error(wrapper)
-            sys.exit()
-else:
-    pbt_dir = os.path.dirname(os.path.abspath(__file__))
-
-warning("PowerBI Temp Dir: {}".format(pbt_dir))
-
-
-def copy_result(pbt_dir):
-    """좀 전의 결과를 복사."""
-    info("copy_result")
-    for ofile in os.listdir(result_dir):
-        spath = os.path.join(result_dir, ofile)
+def copy_cache(pbt_dir):
+    """로컬 캐쉬를 복사."""
+    info("copy_cache from {}".format(pcache_dir))
+    cnt = 0
+    for ofile in os.listdir(pcache_dir):
+        if not ofile.endswith('.csv'):
+            continue
+        spath = os.path.join(pcache_dir, ofile)
         dpath = os.path.join(pbt_dir, ofile)
         info("Copy from {} to {}".format(spath, dpath))
         copyfile(spath, dpath)
+        cnt += 1
+    info("  total {} files copied.".format(cnt))
 
 
-# 작업 완료 시점 비교
-if os.path.isfile(done_path):
-    elapsed = time.time() - os.path.getmtime(done_path)
-    info("Elapsed {} from previous done".format(int(elapsed)))
-    if  elapsed < RESULT_VALID_TIME:
-        # 금방 새로 뜬 프로세스. 이전 결과를 복사해 사용
-        warning("Use previous result.")
-        try:
-            copy_result(pbt_dir)
-            # done 시간 갱신
-            Path(done_path).touch()
-        except Exception as e:
-            error("Copy error: {}".format(str(e)))
+def get_file_hash(path):
+    """파일 해쉬 구하기."""
+    hash = None
+    md5 = hashlib.md5()
+    with open(path, 'rb') as f:
+        data = f.read()
+        md5.update(data)
+        hash = md5.hexdigest()
+    info("get_file_hash from {}: {}".format(path, hash))
+    return hash
+
+
+def load_config():
+    """설정 읽기
+
+    Args:
+        apply_doc (bool): 읽은 설정을 도큐먼트에 적용 여부.
+    """
+    global org_cfg, cfg_hash
+    warning("Load config: {}".format(cfg_path))
+    cfg = ConfigParser()
+    cfg.read(cfg_path)
+    org_cfg = deepcopy(cfg)
+    cfg_hash = get_file_hash(cfg_path)
+
+    return cfg
+
+
+def del_cache():
+    warning("Remove old profile cache dir: {}".format(pcache_dir))
+    rmtree(pcache_dir)
+    os.mkdir(pcache_dir)
+
+
+def check_import_data(cfg):
+    """Power BI 용 데이터 가져오기.
+    
+    - 유효한 로컬 캐쉬가 았으면 그것을 이용
+    - 아니면 새로 가져와 로컬 캐쉬에 저장
+    """
+    global pbt_dir
+
+    # Python 데이터 소스용 임시 디렉토리 얻음
+    arg = sys.argv[1]
+    with codecs.open(arg, 'r', encoding='utf-8') as fp:
+        wrapper = fp.read()
+    try:
+        pbt_dir = re.search(PBTDIR_PTRN, wrapper).groups()[0]
+    except Exception as e:
+        error("Can't find Working Directory at PythonScriptWrapper.py:")
+        error(wrapper)
         sys.exit()
-    elif os.path.isdir(result_dir):  # 중복실행시 지원지는 경우가 있음 
-        # 시간이 꽤 지났음. 이전 결과를 지움.
-        warning("Remove old result_dir.")
-        rmtree(result_dir)
-        os.mkdir(result_dir)
+    else:
+        warning("Power BI Temp Dir: {}".format(pbt_dir))
+
+    # 가능하면 캐쉬 이용
+    if os.path.isdir(cache_dir) and os.path.isfile(meta_path):
+        # 메타 데이터 읽어옴
+        meta = ConfigParser()
+        meta.read(meta_path)
+
+        # 캐쉬 수명 체크
+        created = parse(meta['default']['created'])
+        dif = datetime.now() - created
+        days, hours, mins = dif.days, dif.seconds // 3600, dif.seconds // 60
+        cache_valid_hour = int(cfg[profile]['cache_valid_hour'])
+        valid_life = dif.seconds < cache_valid_hour * 3600
+        info("Cache created {} days {} hours {} minutess ago: {}".format(days, hours, mins, valid_life))
+        meta_cfg_hash = meta['default']['config_hash']
+        valid_cfg = meta_cfg_hash == cfg_hash
+        if not valid_cfg:
+            info("Config hash mismatch: {}(old) != {}(new)".format(meta_cfg_hash, cfg_hash))
+        else:
+            info("Config hash match: {}".format(cfg_hash))
+
+        # 캐쉬 이용 가능하면
+        if valid_life and valid_cfg:
+            # 유효한 캐쉬를 복사해 사용하고
+            warning("Use cache data.")
+            try:
+                copy_cache(pbt_dir)
+            except Exception as e:
+                error("Copy error: {}".format(str(e)))
+            # 종료
+            # time.sleep(5)  # 미리보기 안되는 이슈에 도움?
+            sys.exit()
+        else:
+            # 오래된 캐쉬 지움
+            del_cache()
+
+    # 아니면 새로 가져옴
+    _import_data(cfg)
 
 
-# 시작 속도를 위해 여기에 둠
-from pyathena import connect
-import pandas as pd
+def make_query_rel(db, table, before, offset, for_count):
+    """상대 시간으로 질의를 만듦.
+
+    Args:
+        db (str): DB명
+        table (str): table명
+        before (date): 몇 일 전부터
+        offset (date): 몇 일치 
+        for_count: 행수 구하기 여부
+    """
+    assert before > 0 and offset > 0
+    today = datetime.today().date()
+    end_dt = today - timedelta(days=before)
+    start_dt = end_dt - timedelta(days=offset - 1)
+    start_dt = start_dt.strftime('%Y%m%d')
+    end_dt = end_dt.strftime('%Y%m%d')
+    return _make_query(db, table, start_dt, end_dt, for_count)
+
+
+def _make_query(db, table, start_dt, end_dt, for_count):
+    if not for_count:
+        query = "SELECT * "
+    else:
+        query = "SELECT COUNT(*) as cnt "
+    if start_dt == end_dt:
+        query += "FROM {}.{} WHERE (year || month || day) = '{}'".\
+            format(db, table, end_dt)
+    else:
+        query += "FROM {}.{} WHERE (year || month || day) >= '{}' AND "\
+                "(year || month || day) <= '{}'".\
+                format(db, table, start_dt, end_dt)
+    return query
+
+
+def make_query_abs(db, table, start_dt, end_dt, for_count):
+    """절대 시간으로 질의를 만듦.
+
+    Args:
+        db (str): DB명
+        table (str): table명
+        start_dt (date): 시작일
+        end_dt (date): 종료일
+        for_count: 행수 구하기 여부
+    """
+    assert type(start_dt) is date and type(end_dt) is date
+    start_dt = start_dt.strftime('%Y%m%d')
+    end_dt = end_dt.strftime('%Y%m%d')
+    return _make_query(db, table, start_dt, end_dt, for_count)
+
+
+def get_query_rows_rel(db, table, before, offset):
+    query = make_query_rel(db, table, before, offset, True)
+    rows = cursor.execute(query).fetchone()
+    return rows[0]
+
+
+def get_query_rows_abs(db, table, start_dt, end_dt):
+    query = make_query_abs(db, table, start_dt, end_dt, True)
+    rows = cursor.execute(query).fetchone()
+    return rows[0]
+
+
+def save_metadata():
+    warning("save_metadata")
+    meta = ConfigParser()
+    meta['default'] = {}
+    created = datetime.now()
+    meta['default']['created'] = created.strftime('%Y-%m-%d %H:%M:%S')
+    meta['default']['config_hash'] = cfg_hash
+
+    with open(meta_path, 'w') as fp:
+        meta.write(fp)
+
+
+def _import_data(cfg):
+    """설정대로 데이터 가져오기.
+    
+    - Power BI에서 불려짐
+    - 유효한 캐쉬가 있으면 이용
+    - 아니면 새로 가져옴
+    """
+    global conn, cursor
+    warning("Import data.")
+
+    # 접속
+    info("Connect to import.")
+    conn = connect(aws_access_key_id=cfg['aws']['access_key'],
+        aws_secret_access_key=cfg['aws']['secret_key'],
+        s3_staging_dir=cfg['aws']['s3_stage_dir'],
+        region_name='ap-northeast-2')
+    cursor = conn.cursor()
+
+    sect = cfg[profile]
+    ttype = sect['ttype']
+    if ttype == 'rel':
+        before = int(sect['before'])
+        offset = int(sect['offset'])
+    else:
+        start = parse(sect['start']).date()
+        end = parse(sect['end']).date()
+
+    # 모든 대상 DB의 테이블에 대해
+    for key in cfg[profile].keys():
+        if not key.startswith('db_'):
+            continue 
+        db = key[3:]
+        tables = eval(cfg[profile][key])
+        for tbl in tables:
+            # 쿼리 준비
+            if ttype == 'rel':
+                cnt = get_query_rows_rel(db, tbl, before, offset)
+                query = make_query_rel(db, tbl, before, offset, False)
+
+            else:
+                cnt = get_query_rows_abs(db, tbl, start, end)
+                query = make_query_abs(db, tbl, start, end, False)
+
+            # 가져옴
+            warning("Import '{}' ({:,} rows) from '{}'".format(tbl, cnt, db))
+            info("  query: {}".format(query))
+            df = pd.read_sql(query, conn)
+            csv_file = "{}.{}.csv".format(db, tbl)
+            spath = os.path.join(pcache_dir, csv_file)
+            dpath = os.path.join(pbt_dir, csv_file)            
+
+            # 저장
+            info("Write CSV to cache: {}".format(spath))
+            df.to_csv(spath, index=False)
+            info("Copy from {} to {}\n".format(spath, dpath))
+            copyfile(spath, dpath)
+
+    # 메타정보 기록
+    save_metadata()
+    critical("======= Import successful =======")
+
+
+# Power BI 데이터소스에서 구동한 경우 
+if POWER_BI:
+    # 설정 읽기
+    cfg = load_config()
+    # 데이터 임포트 후 종료
+    check_import_data(cfg)
+    sys.exit()
+
 
 from tkinter import *
 from tkinter import ttk
@@ -257,7 +464,8 @@ def show_aws_config():
     return AWSConfigDlg(win, title="AWS 계정")
 
 
-# UI Data
+# Document Data
+warning("Init document data")
 ttype = StringVar()
 ttype.set('rel')
 lct_val = IntVar()
@@ -269,49 +477,48 @@ rel_off_var.set(1)
 st_dp_val = ed_dp_val = None
 
 
-def load_config():
-    global org_cfg, selected_tables, st_dp_val, ed_dp_val, first_sel_db
-    warning("Load config: {}".format(cfg_path))
-    cfg.read(cfg_path)
+def apply_cfg_to_doc(cfg):
+    """읽은 설정을 도큐먼트에 적용."""
+    global selected_tables, st_dp_val, ed_dp_val, first_sel_db
 
-    # common
-    common = cfg['common']
-    if 'ttype' in common:
-        ttype.set(common['ttype'])
+    info("apply_cfg_to_doc")
+    # 대상 시간
+    sect = cfg[profile]
+    if 'ttype' in sect:
+        ttype.set(sect['ttype'])
         
-    if 'before' in common:
-        rel_bg_var.set(int(common['before']))
-    if 'offset' in common:
-        rel_off_var.set(int(common['offset']))
+    if 'before' in sect:
+        rel_bg_var.set(int(sect['before']))
+    if 'offset' in sect:
+        rel_off_var.set(int(sect['offset']))
 
-    if 'start' in common:
-        st_dp_val = parse(common['start']).date()
-    if 'end' in common:
-        ed_dp_val = parse(common['end']).date()
+    if 'start' in sect:
+        st_dp_val = parse(sect['start']).date()
+    if 'end' in sect:
+        ed_dp_val = parse(sect['end']).date()
 
-    # profile
-    if profile not in cfg:
-        cfg[profile] = {}
-
+    # DB를 순회
     for key in cfg[profile].keys():
-        if key.startswith('db_'):
-            db = key[3:]
-            tables = eval(cfg[profile][key])
-            if first_sel_db is None and len(tables) > 0:
-                first_sel_db = db
-            selected_tables[db] = tables
+        if not key.startswith('db_'):
+            continue
 
-    if 'cache_life' in cfg[profile]:
-        cache_life = int(cfg[profile]['cache_life'])
-        lct_val.set(cache_life)
-    org_cfg = deepcopy(cfg)
+        db = key[3:]
+        tables = eval(sect[key])
+        if first_sel_db is None and len(tables) > 0:
+            first_sel_db = db
+        selected_tables[db] = tables
+
+    if 'cache_valid_hour' in sect:
+        cache_valid_hour = int(sect['cache_valid_hour'])
+        lct_val.set(cache_valid_hour)
 
 
 # 설정 읽기
 need_aws = False
 if os.path.isfile(cfg_path):
     try:
-        load_config()
+        cfg = load_config()
+        apply_cfg_to_doc(cfg)
     except Exception as e:
         error(str(e))
         messagebox.showerror("에러", "설정 읽기 오류입니다.\n{} 파일 확인 후 시작해주세요.".format(CFG_FILE))
@@ -518,8 +725,7 @@ def update_sel_tables(db):
 def validate_cfg():
     """설정 값 확인."""
     _cfg = ConfigParser()
-    _cfg['common'] = {}  # 공통 설정
-    _cfg['pro_default'] = {}  # 기본 프로파일
+    _cfg[profile] = {}  # 기본 프로파일
 
     if ttype.get() == 'rel':
         # 상대 시간
@@ -531,9 +737,9 @@ def validate_cfg():
         elif offset <= 0:
             messagebox.showerror("Error", "몇 일치 데이터를 가져올지 양의 정수로 지정해 주세요.")
             return
-        _cfg['common']['ttype'] = 'rel'
-        _cfg['common']['before'] = str(before)
-        _cfg['common']['offset'] = str(offset)
+        _cfg[profile]['ttype'] = 'rel'
+        _cfg[profile]['before'] = str(before)
+        _cfg[profile]['offset'] = str(offset)
     else:
         # 절대 시간
         start = st_dp.get()
@@ -555,9 +761,9 @@ def validate_cfg():
         if start > end:
             messagebox.showerror("Error", "종료일이 시작일보다 빠릅니다.")
             return
-        _cfg['common']['ttype'] = 'abs'
-        _cfg['common']['start'] = str(start)
-        _cfg['common']['end'] = str(end)
+        _cfg[profile]['ttype'] = 'abs'
+        _cfg[profile]['start'] = str(start)
+        _cfg[profile]['end'] = str(end)
 
 
     # 가져올 행수를 체크
@@ -586,100 +792,13 @@ def validate_cfg():
             _cfg[profile]["db_" + db] = str(tables)
 
     # 캐쉬 유효 시간
-    cache_life = lct_val.get()
-    if cache_life <= 0:
+    cache_valid_hour = lct_val.get()
+    if cache_valid_hour <= 0:
         messagebox.showerror("Error", "캐쉬 수명은 최소 0보다 커야 합니다.")
         return
-    _cfg[profile]['cache_life'] = str(lct_val.get())
+    _cfg[profile]['cache_valid_hour'] = str(lct_val.get())
 
     return _cfg
-
-
-def make_query_rel(db, table, before, offset, for_count):
-    """상대 시간으로 질의를 만듦.
-
-    Args:
-        db (str): DB명
-        table (str): table명
-        before (date): 몇 일 전부터
-        offset (date): 몇 일치 
-        for_count: 행수 구하기 여부
-    """
-    assert before > 0 and offset > 0
-    today = datetime.today().date()
-    start_dt = today - timedelta(days=before)
-    end_dt = start_dt + timedelta(days=offset - 1)
-    start_dt = start_dt.strftime('%Y%m%d')
-    end_dt = end_dt.strftime('%Y%m%d')
-    return _make_query(db, table, start_dt, end_dt, for_count)
-
-
-def make_query_abs(db, table, start_dt, end_dt, for_count):
-    """절대 시간으로 질의를 만듦.
-
-    Args:
-        db (str): DB명
-        table (str): table명
-        start_dt (date): 시작일
-        end_dt (date): 종료일
-        for_count: 행수 구하기 여부
-    """
-    assert type(start_dt) is date and type(end_dt) is date
-    start_dt = start_dt.strftime('%Y%m%d')
-    end_dt = end_dt.strftime('%Y%m%d')
-    return _make_query(db, table, start_dt, end_dt, for_count)
-
-
-def _make_query(db, table, start_dt, end_dt, for_count):
-    if not for_count:
-        query = "SELECT * "
-    else:
-        query = "SELECT COUNT(*) as cnt "
-    if start_dt == end_dt:
-        query += "FROM {}.{} WHERE (year || month || day) = '{}'".\
-            format(db, table, end_dt)
-    else:
-        query += "FROM {}.{} WHERE (year || month || day) >= '{}' AND "\
-                "(year || month || day) <= '{}'".\
-                format(db, table, start_dt, end_dt)
-    return query
-
-
-def get_query_rows_rel(db, table, before, offset):
-    query = make_query_rel(db, table, before, offset, True)
-    rows = cursor.execute(query).fetchone()
-    return rows[0]
-
-
-def get_query_rows_abs(db, table, start_dt, end_dt):
-    query = make_query_abs(db, table, start_dt, end_dt, True)
-    rows = cursor.execute(query).fetchone()
-    return rows[0]
-
-
-def _import():
-    """설정대로 데이터 가져오기."""
-    for tbl in tables:
-        cnt = rows[tbl]
-        warning("Import '{}' ({:,} rows) from '{}'".format(tbl, cnt, db))
-        query = make_query_abs(start_dt, end_dt, db, tbl, False)
-        info("  query: {}".format(query))
-        df = pd.read_sql(query, conn)
-
-        csv_file = tbl + '.csv'
-        spath = os.path.join(result_dir, csv_file)
-        dpath = os.path.join(pbt_dir, csv_file)            
-        info("Write CSV to result: {}".format(spath))
-        df.to_csv(spath, index=False)
-        info("Copy from {} to {}\n".format(spath, dpath))
-        copyfile(spath, dpath)
-
-    unset_wait_cursor()
-    critical("======= Import successful =======")
-    # done 시간 갱신
-    Path(done_path).touch()
-    win.destroy()
-    sys.exit()
 
 
 def on_save():
@@ -707,6 +826,11 @@ def on_aws():
         try_connect()
 
 
+def on_del_cache():
+    del_cache()
+    messagebox.showinfo("Info", "로컬 캐쉬를 제거했습니다.")
+
+
 confirm_frame = Frame(after_dt_frame)
 
 lct_frame = Frame(confirm_frame)
@@ -719,7 +843,7 @@ lct_frame.pack(side=TOP, pady=(20, 0))
 aws_btn = ttk.Button(confirm_frame, text="AWS 계정", width=10, command=on_aws)
 aws_btn.pack(side=LEFT, expand=YES, padx=(20, 7), pady=(20, 20))
 
-flush_btn = ttk.Button(confirm_frame, text="로컬 캐쉬 제거", width=15)
+flush_btn = ttk.Button(confirm_frame, text="로컬 캐쉬 제거", width=15, command=on_del_cache)
 flush_btn.pack(side=LEFT, expand=YES, padx=(7, 7), pady=(20, 20))
 
 save_btn = ttk.Button(confirm_frame, text="저장 후 종료", width=15,
@@ -789,7 +913,6 @@ def find_first_db_idx():
     for idx, db in enumerate(databases):
         if first_sel_db == db:
             return idx
-    import pdb; pdb.set_trace()
     return 0
 
 if 'win' not in sys.platform:

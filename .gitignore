@@ -1,8 +1,11 @@
 # Byte-compiled / optimized / DLL files
-config.ini
+config.txt
 __pycache__/
 *.py[cod]
 *$py.class
+temp/
+PythonScriptWrapper.py
+.vscode/
 
 # C extensions
 *.so
