@@ -12,6 +12,7 @@ Power BI Athena Connector in Python
 3. 최초 한 번 AWS 계정 설정을 해줍니다.
 4. 입력한 AWS 계정 정보로 접속에 성공하면, DB를 선택할 수 있습니다.
 
+
 ## 불러오기 설정하기
 1. 먼저 불러올 대상 시간을 지정합니다. `상대 시간`과 `절대 시간`으로 나뉩니다.
   1. 상대적인 시간 - 몇 일전부터 몇 일치를 불러올지 지정
@@ -45,3 +46,14 @@ Power BI Athena Connector in Python
 - 다음과 같은 경우 캐쉬는 무효화 되고, 다음 불러오기를 할 때 새로 가져오게 됩니다.
   - 생성된 이후 `로컬 캐쉬 유효 시간` 보다 오래된 경우
   - pypbac의 설정 파일이 변경된 경우
+
+## 빌드를 위한 설치
+
+빌드(.exe 생성)를 위해서는 아래와 같은 설치가 필요합니다.
+
+- `pip install pyinstaller`
+- `choco install zip`
+- `choco install grep`
+- `choco install sed`
+
+이후 `build.bat`를 실행하면 `dist\` 디렉토리 아래에 산출물이 생성됩니다.
