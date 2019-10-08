@@ -8,9 +8,9 @@ Power BI Athena Connector in Python
 ## 설치 방법
 
 1. [릴리즈](https://github.com/haje01/pypbac/releases/)에서 압축 파일을 받고,적당한 디렉토리에 풉니다.
-2. 디렉토리내 `python.exe`를 실행합니다.
+2. 먼저 디렉토리내 `setting.exe`를 실행합니다.
 3. 최초 한 번 AWS 계정 설정을 해줍니다.
-4. 입력한 AWS 계정 정보로 접속에 성공하면, DB를 선택할 수 있습니다.
+4. 입력한 AWS 계정 정보로 접속에 성공하면, 불러오기 설정을 할수 있습니다.
 
 
 ## 불러오기 설정하기
@@ -21,7 +21,7 @@ Power BI Athena Connector in Python
 3. Power BI에서 불러올 테이블들을 체크합니다.
 4. `저장 후 종료` 버튼을 눌러 설정을 저장하고 종료합니다.
 
-## Power BI에서 설정하기
+## Power BI 설정하기
 1. Power BI `옵션 및 설정` 메뉴의 `옵션`을 선택합니다.
 2. 옵션 대화창에서 `Python 스크립팅`을 선택합니다.
 3. `검색된 Python 홈 디렉터리` 란에서 `기타`를 선택합니다.
