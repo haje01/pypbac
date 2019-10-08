@@ -7,7 +7,7 @@ Power BI Athena Connector in Python
 
 ## 설치 방법
 
-1. 압축 파일을 적당한 디렉토리에 풉니다.
+1. [릴리즈](https://github.com/haje01/pypbac/releases/)에서 압축 파일을 받고,적당한 디렉토리에 풉니다.
 2. 디렉토리내 `python.exe`를 실행합니다.
 3. 최초 한 번 AWS 계정 설정을 해줍니다.
 4. 입력한 AWS 계정 정보로 접속에 성공하면, DB를 선택할 수 있습니다.
