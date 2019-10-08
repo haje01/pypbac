@@ -12,6 +12,9 @@ from datepicker import Datepicker
 import tkSimpleDialog
 from util import *
 
+WIN_WIDTH = 370
+WIN_HEIGHT = 670
+
 databases = cursor = None
 cfg = ConfigParser()
 org_cfg = None
@@ -145,6 +148,7 @@ def apply_cfg_to_doc(cfg):
         st_dp_val = parse(sect['start']).date()
     if 'end' in sect:
         ed_dp_val = parse(sect['end']).date()
+
     # DB를 순회
     for key in cfg[profile].keys():
         if not key.startswith('db_'):
@@ -258,23 +262,20 @@ db_frame = LabelFrame(sel_frame, text="DB 선택")
 db_val = StringVar()
 db_combo = ttk.Combobox(db_frame, width=20, textvariable=db_val,
                         state="readonly")
-prev_db = None
+cur_db = None
 
 
 def on_db_sel(eobj):
-    global prev_db
-
-    db = db_combo.get()
-    if prev_db is not None:
-        update_sel_tables(prev_db)
-    prev_db = db
+    # if prev_db is not None:
+    #     update_sel_tables(prev_db)
 
     set_wait_cursor()
     disable_controls()
     def _db_set():
-        db = db_combo.get()
-        info("Read tables from '{}'.".format(db))
-        fill_tables(db)
+        global cur_db
+        cur_db = db_combo.get()
+        info("Read tables from '{}'.".format(cur_db))
+        fill_tables(cur_db)
         enable_controls()
         unset_wait_cursor()
 
@@ -284,6 +285,11 @@ def on_db_sel(eobj):
 db_combo.bind("<<ComboboxSelected>>", on_db_sel)
 db_combo.pack(padx=(10, 10), pady=(10,))
 db_frame.pack(side=TOP)
+
+
+def on_check():
+    update_sel_tables(cur_db)
+    update_targets_text()
 
 
 def fill_tables(db):
@@ -311,7 +317,7 @@ def fill_tables(db):
         cv = IntVar()
         if tbl in selected:
             cv.set(1)
-        ckb = Checkbutton(tbl_text, text=tbl, variable=cv)
+        ckb = Checkbutton(tbl_text, text=tbl, variable=cv, command=on_check)
         tbl_text.window_create("end", window=ckb)
         tbl_text.insert("end", "\n")
         tbl_ckbs.append(ckb)
@@ -324,7 +330,7 @@ def fill_tables(db):
 
 # Table 선택 UI
 tbl_frame = LabelFrame(sel_frame, text="테이블 선택")
-tbl_text = Text(tbl_frame, wrap="none", height=15, background=tbl_frame.cget('bg'), bd=0)
+tbl_text = Text(tbl_frame, wrap="none", height=10, background=tbl_frame.cget('bg'), bd=0)
 tbl_text.grid_propagate(False)
 tbl_vsb = Scrollbar(tbl_frame, orient="vertical", command=tbl_text.yview)
 tbl_text.configure(yscrollcommand=tbl_vsb.set)
@@ -332,21 +338,24 @@ tbl_vsb.pack(side="right", fill="y")
 tbl_text.pack(fill='both', expand=True, padx=(15, 15), pady=(5, 20))
 tbl_text.configure(state='disabled')
 
-tbl_frame.pack(side=TOP, fill=None, expand=False, padx=(20, 20), pady=(10, 10))
+tbl_frame.pack(side=TOP, fill=None, expand=False, padx=(20, 20), pady=(10, 5))
 sel_frame.pack(side=TOP)
 tbl_ckbs = []
 tbl_cvs = []
+
 
 def on_all():
     """테이블 전체 선택."""
     for cv in tbl_cvs:
         cv.set(1)
+    on_check()
 
 
 def on_none():
     """테이블 전체 지우기."""
     for cv in tbl_cvs:
         cv.set(0)
+    on_none()
 
 
 tbb_frame = Frame(after_dt_frame)
@@ -378,6 +387,7 @@ def validate_cfg():
     Returns:
         ConfigParser
     """
+    info("validate_cfg")
     _cfg = ConfigParser()
     _cfg[profile] = {}  # 기본 프로파일
 
@@ -429,6 +439,7 @@ def validate_cfg():
                 cnt = get_query_rows_rel(cursor, db, tbl, before, offset)
             else:
                 cnt = get_query_rows_abs(cursor, db, tbl, start, end)
+            info("'{}' '{}' has {} rows".format(db, tbl, cnt))
             if cnt > WARN_ROWS:
                 rv = messagebox.askquestion("경고", "{} DB의 {} 테이블의 행수가 매우 큽니다 ({:,} 행)."
                                             "\n정말 가져오겠습니까?".format(db, tbl, cnt))
@@ -462,7 +473,7 @@ def on_save():
     set_wait_cursor()
 
     db = db_combo.get()
-    update_sel_tables(db)
+    # update_sel_tables(db)
 
     # 설정 검증
     _cfg = validate_cfg()
@@ -485,7 +496,31 @@ def on_del_cache():
     messagebox.showinfo("Info", "로컬 캐쉬를 제거했습니다.")
 
 
+target_frame = LabelFrame(after_dt_frame, text="모든 선택된 대상")
+target_text = Text(target_frame, wrap="none", height=3.5, background=target_frame.cget('bg'), bd=0)
+target_text.grid_propagate(False)
+target_vsb = Scrollbar(target_frame, orient="vertical", command=target_text.yview)
+target_vsb.pack(side='right', fill='y')
+target_hsb = Scrollbar(target_frame, orient="horizontal", command=target_text.xview)
+target_hsb.pack(side="bottom", fill="x")
+target_text.configure(xscrollcommand=target_hsb.set, yscrollcommand=target_vsb.set)
+target_text.pack(fill='both', expand=True, padx=(15, 15), pady=(5, 20))
+target_frame.pack(side=TOP, fill=None, expand=False, padx=(20, 20), pady=(10, 10))
+
 confirm_frame = Frame(after_dt_frame)
+
+
+def update_targets_text():
+    """선택된 테이블들 표시."""
+    target_text.delete('1.0', END)
+    for db, tables in selected_tables.items():
+        if len(tables) == 0:
+            continue
+        text = "{} ({})\n".format(db, ','.join(tables))
+        target_text.insert(END, text)
+
+
+update_targets_text()
 
 lct_frame = Frame(confirm_frame)
 Label(lct_frame, text="로컬 캐쉬 유효 시간:").pack(side=LEFT)

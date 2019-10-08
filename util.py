@@ -7,11 +7,7 @@ from datetime import datetime, timedelta
 
 
 LOG_FILE = 'log.txt'
-PBTDIR_PTRN = r"os.chdir\((?:u')?(.*)(?:')\)"
 CFG_FILE = 'config.txt'
-WIN_WIDTH = 370
-WIN_HEIGHT = 610
-RESULT_VALID_TIME = 60  # 이전 결과를 재활용할 시간 (Power BI에서 파이썬을 계속 띄우는 문제 때문)
 WARN_ROWS = 1000000  # 이 행수 이상 경고
 
 profile = 'profile.default'
@@ -155,12 +151,16 @@ def make_query_abs(db, table, start_dt, end_dt, for_count):
 
 
 def get_query_rows_rel(cursor, db, table, before, offset):
+    info("get_query_rows_rel")
     query = make_query_rel(db, table, before, offset, True)
+    info("  query: {}".format(query))
     rows = cursor.execute(query).fetchone()
     return rows[0]
 
 
 def get_query_rows_abs(cursor, db, table, start_dt, end_dt):
+    info("get_query_rows_abs")
     query = make_query_abs(db, table, start_dt, end_dt, True)
+    info("  query: {}".format(query))
     rows = cursor.execute(query).fetchone()
     return rows[0]

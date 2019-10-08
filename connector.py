@@ -27,6 +27,7 @@ from pyathena import connect
 
 from util import *
 
+PBTDIR_PTRN = r"os.chdir\((?:u')?(.*)(?:')\)"
 cursor = None
 cfg_hash = None
 
