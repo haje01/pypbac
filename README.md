@@ -5,6 +5,10 @@ Power BI Athena Connector in Python
 
 마이크로소프트의 Power BI에서 AWS Athena 데이터를 불러오기 위한 커넥터입니다. 
 
+다음과 같은 전제를 합니다:
+
+- Athena의 테이블은 `year`, `month`, `day` 필드로 파티션됨.
+
 ## 설치 방법
 
 1. [릴리즈](https://github.com/haje01/pypbac/releases/)에서 압축 파일을 받고,적당한 디렉토리에 풉니다.
