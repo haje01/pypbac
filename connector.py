@@ -186,7 +186,7 @@ def _import_data(cfg):
 
             # 저장
             info("Write CSV to cache: {}".format(spath))
-            df.to_csv(spath, index=False)
+            df.to_csv(spath, index=False, encoding='utf-8-sig')
             info("Copy from {} to {}\n".format(spath, dpath))
             copyfile(spath, dpath)
 
