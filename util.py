@@ -3,8 +3,8 @@ import logging
 import hashlib
 from configparser import ConfigParser
 from shutil import rmtree
-from datetime import datetime, timedelta
-
+from datetime import datetime, timedelta, date
+from dateutil.parser import parse
 
 LOG_FILE = 'log.txt'
 CFG_FILE = 'config.txt'
