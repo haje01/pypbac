@@ -18,20 +18,16 @@ first_sel_db = first_sel_db_idx = None
 # 각종 경로 초기화
 mod_dir = os.path.dirname(os.path.abspath(__file__))
 home_dir = os.path.expanduser('~')
-pypbac_dir = os.path.join(home_dir, ".pypbac")
-cache_dir = os.path.join(pypbac_dir, 'cache')
-pcache_dir = os.path.join(cache_dir, 'default')
-log_path = os.path.join(pypbac_dir, LOG_FILE)
-cfg_path = os.path.join(pypbac_dir, CFG_FILE)
-meta_path = os.path.join(pcache_dir, 'metadata.txt')
+proj_dir = os.path.join(home_dir, ".pypbac")
+cache_base_dir = os.path.join(proj_dir, 'cache')
+log_path = os.path.join(proj_dir, LOG_FILE)
+cfg_path = os.path.join(proj_dir, CFG_FILE)
 
 # 필요한 디렉토리 생성
-if not os.path.isdir(pypbac_dir):
-    os.mkdir(pypbac_dir)
-if not os.path.isdir(cache_dir):
-    os.mkdir(cache_dir)
-if not os.path.isdir(pcache_dir):
-    os.mkdir(pcache_dir)
+if not os.path.isdir(proj_dir):
+    os.mkdir(proj_dir)
+if not os.path.isdir(cache_base_dir):
+    os.mkdir(cache_base_dir)
 
 
 logging.basicConfig(
@@ -80,6 +76,13 @@ def get_file_hash(path):
     return hash
 
 
+def get_text_hash(text):
+    """텍스트 해쉬 구하기."""
+    md5 = hashlib.md5()
+    md5.update(text.encode('utf-8'))
+    return md5.hexdigest()
+
+
 def load_config():
     """설정 읽기
 
@@ -94,9 +97,36 @@ def load_config():
     return cfg, cfg_hash
 
 
-def del_cache():
-    warning("Remove old profile cache dir: {}".format(pcache_dir))
-    rmtree(pcache_dir)
+def get_cache_dir(pro_name):
+    return os.path.join(cache_base_dir, pro_name)
+
+
+def get_meta_path(pro_name):
+    cache_dir = get_cache_dir(pro_name)
+    meta_path = os.path.join(cache_dir, 'metadata.txt')
+    return meta_path
+
+
+def check_cache_dir(pro_name):
+    """프로파일 용 캐쉬 디렉토리를 확인 후 없으면 만듦.
+    
+    Args:
+        pro_name (str): 프로파일 명
+    
+    Returns:
+        str: 프로파일 캐쉬 디렉토리 경로
+    """
+    cache_dir = get_cache_dir(pro_name)
+    if not os.path.isdir(cache_dir):
+        os.mkdir(cache_dir)
+    return cache_dir
+
+
+def del_cache(pro_name):
+    pcache_dir = get_cache_dir(pro_name)
+    if os.path.isdir(pcache_dir):
+        warning("Remove old profile cache dir: {}".format(pcache_dir))
+        rmtree(pcache_dir)
     os.mkdir(pcache_dir)
 
 

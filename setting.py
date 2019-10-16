@@ -6,6 +6,7 @@ from copy import deepcopy
 from tkinter import *
 from tkinter import ttk
 from tkinter import messagebox
+from tkinter.simpledialog import askstring
 from pyathena import connect
 
 from datepicker import Datepicker
@@ -13,11 +14,14 @@ import tkSimpleDialog
 from util import *
 
 WIN_WIDTH = 370
-WIN_HEIGHT = 670
+WIN_HEIGHT = 720
+NB_WIDTH = 330
+NB_HEIGHT = 630
 
 databases = cursor = None
 cfg = ConfigParser()
 org_cfg = None
+profiles = {}
 
 
 def save_config(cfg):
@@ -90,87 +94,551 @@ class AWSConfigDlg(tkSimpleDialog.Dialog):
         save_config(cfg)
 
 
+def get_current_profile():
+    pt = notebook.select()
+    tab = notebook.tab(pt)
+    return profiles[tab['text']]
+
+
+def on_ttype():
+    curpro = get_current_profile()
+    curpro.switch_absrel_frame()
+
+
+def disable_controls():
+    global prev_tab, win
+
+    for pro in profiles.values():
+        pro.disable_controls()
+    for ctrl in global_disable_targets:
+        ctrl['state'] = 'disabled'
+    
+    pt = notebook.select()
+    if len(pt) > 0:
+        prev_tab = pt
+
+    # for item in notebook.tabs():
+    #     notebook.tab(item, state='disabled')
+    win.update_idletasks()
+
+
+def on_db_sel(eobj):
+    set_wait_cursor()
+    disable_controls()
+
+    def _db_set():
+        curpro = get_current_profile()
+        curpro.db_set()
+        enable_controls()
+        unset_wait_cursor()
+
+    win.after(10, _db_set)
+
+
+def on_all_table():
+    """테이블 전체 선택."""
+    curpro = get_current_profile()
+    for cv in curpro.tbl_cvs:
+        cv.set(1)
+    on_check()
+    
+
+def on_no_table():
+    """테이블 전체 지우기."""
+    curpro = get_current_profile()
+    for cv in curpro.tbl_cvs:
+        cv.set(0)
+    on_check()
+    
+
+def on_del_cache():
+    curpro = get_current_profile()
+    del_cache(curpro.name)
+    messagebox.showinfo("Info", "프로파일 '{}' 의 캐쉬를 제거했습니다.".format(curpro.name))
+
+
+def on_save():
+    """설정 저장"""
+    global cfg
+    set_wait_cursor()
+    disable_controls()
+
+    # db = db_combo.get()
+    # update_sel_tables(db)
+
+    # 설정 검증
+    for pro in profiles.values():
+        pcfg = pro.validate_cfg()
+        if pcfg is None:
+            return
+        sname = "profile.{}".format(pro.name)
+        cfg[sname] = pcfg            
+
+    save_config(cfg)
+    enable_controls()
+    unset_wait_cursor()
+    win.destroy()
+
+
+class Profile:
+
+    def __init__(self, name, win, notebook, proidx):
+
+        global pro
+        self.name = name
+        self.selected_tables = {}
+        self.first_sel_db = None
+        self.proidx = proidx
+
+        #
+        # Document Data
+        #
+        warning("Init document data")
+        self.ttype = StringVar()
+        self.ttype.set('rel')
+        self.lct_val = IntVar()
+        self.lct_val.set(1)
+        self.rel_bg_var = IntVar()
+        self.rel_bg_var.set(1)
+        self.rel_off_var = IntVar()
+        self.rel_off_var.set(1)
+        self.st_dp_val = self.ed_dp_val = None
+        self.db_val = StringVar()
+
+        #
+        # UI
+        #
+        self.notebook = notebook
+        self.pro_frame = Frame(win)
+        notebook.add(self.pro_frame, text=name)
+        self.abs_frame = LabelFrame(self.pro_frame, text="날자 선택")
+        self.rel_frame = LabelFrame(self.pro_frame, text="범위 선택")
+
+        # 날자 타입
+        self.ttype_frame = Frame(self.pro_frame)
+        self.rel_rbt = Radiobutton(self.ttype_frame, text="상대 시간", variable=self.ttype, value="rel", command=on_ttype)
+        self.rel_rbt.pack(side=LEFT, expand=True, padx=(20, 10))
+        self.abs_rbt = Radiobutton(self.ttype_frame, text="절대 시간", variable=self.ttype, value="abs", command=on_ttype)
+        self.abs_rbt.pack(side=LEFT, expand=True, padx=(10, 20))
+        self.ttype_frame.pack(side=TOP, pady=(20, 0))
+
+        # 상대 시간
+        self.rel_bg_etr = Entry(self.rel_frame, textvariable=self.rel_bg_var, width=5, justify=CENTER)
+        self.rel_bg_etr.pack(side=LEFT, padx=(15, 5), pady=10)
+        Label(self.rel_frame, text="일 전부터").pack(side=LEFT, pady=10)
+        self.rel_off_etr = Entry(self.rel_frame, textvariable=self.rel_off_var, width=5, justify=CENTER)
+        self.rel_off_etr.pack(side=LEFT, padx=(10, 5), pady=10)
+        Label(self.rel_frame, text="일치 데이터").pack(side=LEFT, padx=(0, 15), pady=10)
+        self.pack_rel_frame()
+
+        # 절대 시간 
+        self.dts_frame = Frame(self.abs_frame)
+        st_lbl = Label(self.dts_frame, justify="left", text="시작일")
+        st_lbl.grid(row=0, column=0, stick=W, padx=(10, 20), pady=3)
+        self.st_dp = Datepicker(self.dts_frame)
+        self.st_dp.grid(row=0, column=1, padx=(10, 20), pady=3)
+        self.dts_frame.pack(side=TOP)
+
+        self.dte_frame = Frame(self.abs_frame)
+        ed_lbl = Label(self.dte_frame, justify="left", text="종료일")
+        ed_lbl.grid(row=0, column=0, stick=W, padx=(10, 20), pady=3)
+        self.ed_dp = Datepicker(self.dte_frame)
+        self.ed_dp.grid(row=0, column=1, padx=(10, 20), pady=3)
+        self.dte_frame.pack(side=TOP, pady=(7, 10))
+        self.pack_abs_frame()
+
+        # 날자 이후 UI프레임
+        self.after_dt_frame = Frame(self.pro_frame)
+        self.sel_frame = Frame(self.after_dt_frame)
+
+        # DB 선택 UI
+        self.db_frame = LabelFrame(self.sel_frame, text="DB 선택")
+        self.db_combo = ttk.Combobox(self.db_frame, width=20, textvariable=self.db_val, state="readonly")
+        self.cur_db = None
+
+        self.db_combo.bind("<<ComboboxSelected>>", on_db_sel)
+        self.db_combo.pack(padx=10, pady=(10,))
+        self.db_frame.pack(side=TOP)
+
+        # Table 선택 UI
+        self.tbl_frame = LabelFrame(self.sel_frame, text="테이블 선택")
+        self.tbl_text = Text(self.tbl_frame, wrap="none", height=10, background=self.tbl_frame.cget('bg'), bd=0)
+        self.tbl_text.grid_propagate(False)
+        self.tbl_vsb = Scrollbar(self.tbl_frame, orient="vertical", command=self.tbl_text.yview)
+        self.tbl_text.configure(yscrollcommand=self.tbl_vsb.set)
+        self.tbl_vsb.pack(side="right", fill="y")
+        self.tbl_text.pack(fill='both', expand=True, padx=15, pady=(5, 20))
+
+        self.tbl_frame.pack(side=TOP, fill=None, expand=False, padx=20, pady=(10, 5))
+        self.sel_frame.pack(side=TOP)
+        self.tbl_ckbs = []
+        self.tbl_cvs = []
+
+        # 테이블 전체 선택/취소
+        self.tbb_frame = Frame(self.after_dt_frame)
+        self.all_btn = ttk.Button(self.tbb_frame, text="전체 선택", width=8, command=on_all_table)
+        self.all_btn.pack(side=LEFT, expand=YES)
+        self.none_btn = ttk.Button(self.tbb_frame, text="전체 취소", width=8, command=on_no_table)
+        self.none_btn.pack(side=LEFT, expand=YES)
+        self.tbb_frame.pack(fill=BOTH, expand=YES)
+
+        self.switch_absrel_frame()
+
+        # 선택된 대상
+        self.target_frame = LabelFrame(self.after_dt_frame, text="모든 선택된 대상")
+        self.target_text = Text(self.target_frame, wrap="none", height=3.5, background=self.target_frame.cget('bg'), bd=0)
+        self.target_text.grid_propagate(False)
+        self.target_vsb = Scrollbar(self.target_frame, orient="vertical", command=self.target_text.yview)
+        self.target_vsb.pack(side='right', fill='y')
+        self.target_hsb = Scrollbar(self.target_frame, orient="horizontal", command=self.target_text.xview)
+        self.target_hsb.pack(side="bottom", fill="x")
+        self.target_text.configure(xscrollcommand=self.target_hsb.set, yscrollcommand=self.target_vsb.set)
+        self.target_text.pack(fill='both', expand=True, padx=15, pady=(5, 20))
+        self.target_text['state'] = 'disabled'
+        self.target_frame.pack(side=TOP, fill=None, expand=False, padx=20, pady=(10, 0))
+
+        self.update_targets_text()
+
+        self.lct_frame = Frame(self.after_dt_frame)
+        Label(self.lct_frame, text="로컬 캐쉬 유효 시간:").pack(side=LEFT)
+        self.lct_etr = Entry(self.lct_frame, textvariable=self.lct_val, width=3, justify="center")
+        self.lct_etr.pack(side=LEFT, padx=(5, 2))
+        Label(self.lct_frame, text="시간").pack(side=LEFT)
+        self.lct_frame.pack(side=TOP, pady=(10, 0))
+
+        self.confirm_frame = Frame(self.after_dt_frame)
+
+        self.flush_btn = ttk.Button(self.confirm_frame, text="로컬 캐쉬 제거", width=15, command=on_del_cache)
+        self.flush_btn.pack(side=LEFT, expand=YES, padx=10, pady=10)
+
+        self.confirm_frame.pack(fill=BOTH, expand=YES)
+
+        self.disable_targets = [self.st_dp, self.ed_dp, self.all_btn, self.none_btn, self.lct_etr, 
+                                self.db_combo, self.rel_rbt, self.abs_rbt, self.rel_bg_etr, self.rel_off_etr, self.flush_btn]
+
+    def set_databases(self, databases):
+        self.db_combo['values'] = databases
+        # 첫 번재 DB 선택
+        db_idx = self.find_first_db_idx()
+        info("set_databases set db idx {}".format(db_idx))
+        self.first_sel_db = self.db_combo.current(db_idx)
+
+    def db_set(self):
+        assert len(self.db_combo['values']) > 0
+        self.cur_db = self.db_combo.get()
+        info("Read tables from '{}'.".format(self.cur_db))
+        self.fill_tables(self.cur_db)
+
+    def find_first_db_idx(self):
+        for idx, db in enumerate(databases):
+            if self.first_sel_db == db:
+                return idx
+        return 0
+
+    def set_wait_cursor(self):
+        if self.tbl_text is not None:
+            self.tbl_text.config(cursor='wait')
+
+    def unset_wait_cursor(self):
+        if self.tbl_text is not None:
+            self.tbl_text.config(cursor='')
+
+    def pack_rel_frame(self):
+        self.rel_frame.pack(side=TOP, pady=7)
+
+    def pack_abs_frame(self):
+        self.abs_frame.pack(side=TOP, pady=7)
+
+    def switch_absrel_frame(self):
+        tval = self.ttype.get()
+        self.after_dt_frame.pack_forget()
+        if tval == 'rel':
+            self.abs_frame.pack_forget()
+            self.pack_rel_frame()
+        else:
+            self.rel_frame.pack_forget()        
+            self.pack_abs_frame()
+        self.after_dt_frame.pack(side=TOP)
+
+    def apply_profile_cfg(self, pcfg):
+        """읽은 프로파일 설정을 적용."""
+        info("apply_profile_cfg")
+        self.org_pcfg = deepcopy(pcfg)
+        
+        # 대상 시간
+        if 'ttype' in pcfg:
+            self.ttype.set(pcfg['ttype'])
+            on_ttype()
+            
+        if 'before' in pcfg:
+            self.rel_bg_var.set(int(pcfg['before']))
+        if 'offset' in pcfg:
+            self.rel_off_var.set(int(pcfg['offset']))
+
+        if 'start' in pcfg:
+            self.st_dp_val = parse(pcfg['start']).date()
+        if 'end' in pcfg:
+            self.ed_dp_val = parse(pcfg['end']).date()
+
+        if self.st_dp_val is not None:
+            self.st_dp.current_date = self.st_dp_val
+        if self.ed_dp_val is not None:
+            self.ed_dp.current_date = self.ed_dp_val
+
+        # DB를 순회
+        for key in pcfg.keys():
+            if not key.startswith('db_'):
+                continue
+
+            db = key[3:]
+            tables = eval(pcfg[key])
+            if self.first_sel_db is None and len(tables) > 0:
+                self.first_sel_db = db
+            self.selected_tables[db] = tables
+
+        if 'cache_valid_hour' in pcfg:
+            cache_valid_hour = int(pcfg['cache_valid_hour'])
+            self.lct_val.set(cache_valid_hour)
+
+        self.update_targets_text()
+
+    def fill_tables(self, db):
+        info("fill_tables for {}".format(db))
+
+        tables = get_tables(db)
+        # 이전에 선택된 테이블들 
+        if db in self.selected_tables:
+            selected = self.selected_tables[db]
+            info("  selected: {}".format(selected))
+        else:
+            selected = []
+
+        num_tbl = len(tables)
+        for ckbs in self.tbl_ckbs:
+            ckbs.destroy()
+        self.tbl_ckbs = []
+        self.tbl_cvs = []
+        self.tbl_text.configure(state='normal')
+        self.tbl_text.delete('1.0', END)
+
+        for i, tbl in enumerate(tables):
+            cv = IntVar()
+            if tbl in selected:
+                cv.set(1)
+            ckb = Checkbutton(self.tbl_text, text=tbl, variable=cv, command=on_check)
+            info("create table ckb {}".format(tbl))
+            self.tbl_text.window_create("end", window=ckb)
+            self.tbl_text.insert("end", "\n")
+            self.tbl_ckbs.append(ckb)
+            self.tbl_cvs.append(cv)
+
+        self.tbl_text.configure(state='disabled')
+        self.tbl_frame.update()
+
+    def update_sel_tables(self):
+        """DB의 선택된 테이블 기억."""
+        info("update_sel_tables for {}".format(self.cur_db))
+        selected = []
+        for i, cv in enumerate(self.tbl_cvs):
+            if cv.get() == 1:
+                selected.append(self.tbl_ckbs[i]['text'])
+        self.selected_tables[self.cur_db] = selected
+
+    def validate_cfg(self):
+        """프로파일 설정 값 확인.
+        
+        프로파일 UI에 설정된 값들을 확인하고, dict 넣어 반환
+        
+        Returns:
+            dict
+        """
+        info("validate_cfg")
+        pcfg = {}  # 프로파일 설정
+
+        if self.ttype.get() == 'rel':
+            # 상대 시간
+            before = self.rel_bg_var.get()
+            offset = self.rel_off_var.get()
+            if before <= 0:
+                messagebox.showerror("Error", "몇 일 전부터 시작할지 양의 정수로 지정해 주세요.")
+                return
+            elif offset <= 0:
+                messagebox.showerror("Error", "몇 일치 데이터를 가져올지 양의 정수로 지정해 주세요.")
+                return
+            pcfg['ttype'] = 'rel'
+            pcfg['before'] = str(before)
+            pcfg['offset'] = str(offset)
+        else:
+            # 절대 시간
+            start = self.st_dp.get()
+            end = self.ed_dp.get()
+            db_name = self.db_combo.get()
+
+            if len(start) == 0:
+                messagebox.showerror("Error", "시작일을 선택해주세요.")
+                return
+            elif len(end) == 0:
+                messagebox.showerror("Error", "종료일을 선택해주세요.")
+                return
+            elif len(db_name) == 0:
+                messagebox.showerror("Error", "선택된 DB가 없습니다.")
+                return
+
+            start = parse(start).date()
+            end = parse(end).date()
+            if start > end:
+                messagebox.showerror("Error", "종료일이 시작일보다 빠릅니다.")
+                return
+            pcfg['ttype'] = 'abs'
+            pcfg['start'] = str(start)
+            pcfg['end'] = str(end)
+
+
+        # 가져올 행수를 체크
+        tbl_cnt = 0
+        for db, tbls in self.selected_tables.items():
+            for tbl in tbls:
+                tbl_cnt += 1
+                if self.ttype.get() == 'rel':
+                    cnt = get_query_rows_rel(cursor, db, tbl, before, offset)
+                else:
+                    cnt = get_query_rows_abs(cursor, db, tbl, start, end)
+                info("'{}' '{}' has {} rows".format(db, tbl, cnt))
+                if cnt > WARN_ROWS:
+                    rv = messagebox.askquestion("경고", "{} DB의 {} 테이블의 행수가 매우 큽니다 ({:,} 행)."
+                                                "\n정말 가져오겠습니까?".format(db, tbl, cnt))
+                    if rv != 'yes':
+                        return
+
+        if tbl_cnt == 0:
+            messagebox.showerror("Error", "선택된 테이블이 없습니다.")
+            return
+
+        # 선택된 테이블 기억
+        for db in self.selected_tables.keys():
+            tables = self.selected_tables[db]
+            if len(tables) > 0:
+                pcfg["db_" + db] = str(tables)
+
+        # 캐쉬 유효 시간
+        cache_valid_hour = self.lct_val.get()
+        if cache_valid_hour <= 0:
+            messagebox.showerror("Error", "캐쉬 수명은 최소 0보다 커야 합니다.")
+            return
+        pcfg['cache_valid_hour'] = str(self.lct_val.get())
+
+        return pcfg
+
+    def update_targets_text(self):
+        """선택된 테이블들 표시."""
+        self.target_text['state'] = 'normal'
+        self.target_text.delete('1.0', END)
+        for db, tables in self.selected_tables.items():
+            if len(tables) == 0:
+                continue
+            text = "{} ({})\n".format(db, ','.join(tables))
+            self.target_text.insert(END, text)
+        self.target_text['state'] = 'disabled'
+
+    def disable_controls(self):
+        for ctrl in (self.disable_targets + self.tbl_ckbs):
+            ctrl['state'] = 'disabled'
+        self.tbl_text.configure(state='disabled')
+
+    def enable_controls(self):
+        for ctrl in (self.disable_targets + self.tbl_ckbs):
+            ctrl['state'] = 'normal'
+        self.db_combo['state'] = 'readonly'
+        self.tbl_text.configure(state='normal')
+
+
 info("Construct GUI.")
 win = Tk()
 win.title("Athena 가져오기 설정")
 win.geometry("{}x{}+100+100".format(WIN_WIDTH, WIN_HEIGHT))
-tbl_text = None
+
+
+def add_profile(win, pro_name):
+    proidx = len(profiles)
+    pro = Profile(pro_name, win, notebook, proidx)
+    if databases is not None:
+        pro.set_databases(databases)
+    profiles[pro_name] = pro
+    notebook.select(proidx)
+    return pro
+
+
+def profile_exists(name):
+    return name in profiles
+
+
+def on_add_profile():
+    pro_name = askstring(win, "새로운 프로파일 이름?")
+    if profile_exists(pro_name):
+        messagebox.showerror("에러", "같은 이름의 프로파일이 이미 존재합니다.")
+        return
+    if pro_name is not None and len(pro_name) > 0:
+        add_profile(win, pro_name)
+
+
+def on_del_profile():
+    if len(profiles) == 1:
+        messagebox.showerror("에러", "적어도 하나 이상의 프로파일이 필요합니다.")
+        return
+    tab = notebook.select()
+    pro_name = notebook.tab(tab)['text']
+    yes = messagebox.askokcancel(win, "'{}' 프로파일을 지우시겠습니까?".format(pro_name))
+    if yes:
+        notebook.forget(tab)
+        del profiles[pro_name]
+
+
+pm_frame = Frame(win)
+pm_frame.pack(side=RIGHT, fill=Y, padx=3, pady=5)
+
+addp_btn = Button(pm_frame, text='+', command=on_add_profile, width=1)
+addp_btn.pack(side=TOP)
+delp_btn = Button(pm_frame, text='-', command=on_del_profile, width=1)
+delp_btn.pack(side=TOP)
 
 
 def set_wait_cursor():
-    global tbl_text
     win.config(cursor='wait')
-    if tbl_text is not None:
-        tbl_text.config(cursor='wait')
+    curpro = get_current_profile()
+    curpro.set_wait_cursor()
     win.update_idletasks()
 
 
 def unset_wait_cursor():
-    global tbl_text
     win.config(cursor='')
-    if tbl_text is not None:
-        tbl_text.config(cursor='')
+    curpro = get_current_profile()
+    curpro.unset_wait_cursor()
 
 
 def show_aws_config():
     return AWSConfigDlg(win, title="AWS 계정")
 
 
-# Document Data
-warning("Init document data")
-ttype = StringVar()
-ttype.set('rel')
-lct_val = IntVar()
-lct_val.set(1)
-rel_bg_var = IntVar()
-rel_bg_var.set(1)
-rel_off_var = IntVar()
-rel_off_var.set(1)
-st_dp_val = ed_dp_val = None
+def iter_profile_sect(cfg):
+    for key in cfg.keys():
+        if key.startswith('profile.'):
+            yield key
 
 
-def apply_cfg_to_doc(cfg):
-    """읽은 설정을 도큐먼트에 적용."""
-    global selected_tables, st_dp_val, ed_dp_val, first_sel_db
-
-    info("apply_cfg_to_doc")
-    # 대상 시간
-    sect = cfg[profile]
-    if 'ttype' in sect:
-        ttype.set(sect['ttype'])
-        
-    if 'before' in sect:
-        rel_bg_var.set(int(sect['before']))
-    if 'offset' in sect:
-        rel_off_var.set(int(sect['offset']))
-
-    if 'start' in sect:
-        st_dp_val = parse(sect['start']).date()
-    if 'end' in sect:
-        ed_dp_val = parse(sect['end']).date()
-
-    # DB를 순회
-    for key in cfg[profile].keys():
-        if not key.startswith('db_'):
-            continue
-
-        db = key[3:]
-        tables = eval(sect[key])
-        if first_sel_db is None and len(tables) > 0:
-            first_sel_db = db
-        selected_tables[db] = tables
-
-    if 'cache_valid_hour' in sect:
-        cache_valid_hour = int(sect['cache_valid_hour'])
-        lct_val.set(cache_valid_hour)
-
+notebook = ttk.Notebook(win, width=NB_WIDTH, height=NB_HEIGHT)
+notebook.pack(pady=(15, 0), anchor=NE)
 
 # 설정 읽기
 need_aws = False
 if os.path.isfile(cfg_path):
     try:
         cfg, _ = load_config()
-        apply_cfg_to_doc(cfg)
+        # 모든 프로파일 설정
+        for sname in iter_profile_sect(cfg):
+            pro_name = sname[8:]
+            pcfg = cfg[sname]
+            pro = add_profile(win, pro_name)
+            pro.apply_profile_cfg(pcfg)
     except Exception as e:
         error(str(e))
         messagebox.showerror("에러", "설정 읽기 오류입니다.\n{} 파일 확인 후 시작해주세요.".format(CFG_FILE))
@@ -189,300 +657,14 @@ def get_tables(db):
     return [r[0] for r in _tables]
 
 
-abs_frame = LabelFrame(win, text="날자 선택")
-rel_frame = LabelFrame(win, text="범위 선택")
-
-
-def pack_rel_frame():
-    rel_frame.pack(side=TOP, pady=(10, 10))
-
-
-def pack_abs_frame():
-    abs_frame.pack(side=TOP, pady=(10, 10))
-
-
-def on_ttype():
-    switch_absrel_frame(ttype.get())
-
-
-# 날자 타입
-ttype_frame = Frame(win)
-rel_rbt = Radiobutton(ttype_frame, text="상대 시간", variable=ttype, value="rel", command=on_ttype)
-rel_rbt.pack(side=LEFT, expand=True, padx=(20, 10))
-abs_rbt = Radiobutton(ttype_frame, text="절대 시간", variable=ttype, value="abs", command=on_ttype)
-abs_rbt.pack(side=LEFT, expand=True, padx=(10, 20))
-ttype_frame.pack(side=TOP, pady=(20, 0))
-
-# 상대 시간
-rel_bg_etr = Entry(rel_frame, textvariable=rel_bg_var, width=5, justify=CENTER)
-rel_bg_etr.pack(side=LEFT, padx=(15, 5), pady=(10, 10))
-Label(rel_frame, text="일 전부터").pack(side=LEFT, pady=(10, 10))
-rel_off_etr = Entry(rel_frame, textvariable=rel_off_var, width=5, justify=CENTER)
-rel_off_etr.pack(side=LEFT, padx=(10, 5), pady=(10, 10))
-Label(rel_frame, text="일치 데이터").pack(side=LEFT, padx=(0, 15), pady=(10, 10))
-pack_rel_frame()
-
-# 절대 시간 
-dts_frame = Frame(abs_frame)
-st_lbl = Label(dts_frame, justify="left", text="시작일")
-st_lbl.grid(row=0, column=0, stick=W, padx=(10, 20), pady=(3, 3))
-st_dp = Datepicker(dts_frame)
-if st_dp_val is not None:
-    st_dp.current_date = st_dp_val
-st_dp.grid(row=0, column=1, padx=(10, 20), pady=(3, 3))
-dts_frame.pack(side=TOP)
-
-dte_frame = Frame(abs_frame)
-ed_lbl = Label(dte_frame, justify="left", text="종료일")
-ed_lbl.grid(row=0, column=0, stick=W, padx=(10, 20), pady=(3, 3))
-ed_dp = Datepicker(dte_frame)
-if ed_dp_val is not None:
-    ed_dp.current_date = ed_dp_val
-ed_dp.grid(row=0, column=1, padx=(10, 20), pady=(3, 3))
-dte_frame.pack(side=TOP, pady=(7, 10))
-pack_abs_frame()
-
-# 날자 이후 UI프레임
-after_dt_frame = Frame(win)
-sel_frame = Frame(after_dt_frame)
-
-def switch_absrel_frame(tval):
-    after_dt_frame.pack_forget()
-    if tval == 'rel':
-        abs_frame.pack_forget()
-        pack_rel_frame()
-    else:
-        rel_frame.pack_forget()        
-        pack_abs_frame()
-    after_dt_frame.pack(side=TOP)
-
-
-# DB 선택 UI
-db_frame = LabelFrame(sel_frame, text="DB 선택")
-db_val = StringVar()
-db_combo = ttk.Combobox(db_frame, width=20, textvariable=db_val,
-                        state="readonly")
-cur_db = None
-
-
-def on_db_sel(eobj):
-    # if prev_db is not None:
-    #     update_sel_tables(prev_db)
-
-    set_wait_cursor()
-    disable_controls()
-    def _db_set():
-        global cur_db
-        cur_db = db_combo.get()
-        info("Read tables from '{}'.".format(cur_db))
-        fill_tables(cur_db)
-        enable_controls()
-        unset_wait_cursor()
-
-    win.after(10, _db_set)
-
-
-db_combo.bind("<<ComboboxSelected>>", on_db_sel)
-db_combo.pack(padx=(10, 10), pady=(10,))
-db_frame.pack(side=TOP)
+notebook.select(0)
+pro_names = list(profiles.keys())
 
 
 def on_check():
-    update_sel_tables(cur_db)
-    update_targets_text()
-
-
-def fill_tables(db):
-    global tbl_ckbs, tbl_cvs
-    info("fill_tables for {}".format(db))
-
-    tables = get_tables(db)
-    # 이전에 선택된 테이블들 
-    if db in selected_tables:
-        selected = selected_tables[db]
-        info("  selected: {}".format(selected))
-    else:
-        selected = []
-
-    num_tbl = len(tables)
-    for ckbs in tbl_ckbs:
-        # ckbs.pack_forget()
-        ckbs.destroy()
-    tbl_ckbs = []
-    tbl_cvs = []
-    tbl_text.configure(state='normal')
-    tbl_text.delete('1.0', END)
-
-    for i, tbl in enumerate(tables):
-        cv = IntVar()
-        if tbl in selected:
-            cv.set(1)
-        ckb = Checkbutton(tbl_text, text=tbl, variable=cv, command=on_check)
-        tbl_text.window_create("end", window=ckb)
-        tbl_text.insert("end", "\n")
-        tbl_ckbs.append(ckb)
-        tbl_cvs.append(cv)
-
-    tbl_text.configure(state='disabled')
-    tbl_frame.update()
-    return tbl_ckbs
-
-
-# Table 선택 UI
-tbl_frame = LabelFrame(sel_frame, text="테이블 선택")
-tbl_text = Text(tbl_frame, wrap="none", height=10, background=tbl_frame.cget('bg'), bd=0)
-tbl_text.grid_propagate(False)
-tbl_vsb = Scrollbar(tbl_frame, orient="vertical", command=tbl_text.yview)
-tbl_text.configure(yscrollcommand=tbl_vsb.set)
-tbl_vsb.pack(side="right", fill="y")
-tbl_text.pack(fill='both', expand=True, padx=(15, 15), pady=(5, 20))
-tbl_text.configure(state='disabled')
-
-tbl_frame.pack(side=TOP, fill=None, expand=False, padx=(20, 20), pady=(10, 5))
-sel_frame.pack(side=TOP)
-tbl_ckbs = []
-tbl_cvs = []
-
-
-def on_all():
-    """테이블 전체 선택."""
-    for cv in tbl_cvs:
-        cv.set(1)
-    on_check()
-
-
-def on_none():
-    """테이블 전체 지우기."""
-    for cv in tbl_cvs:
-        cv.set(0)
-    on_none()
-
-
-tbb_frame = Frame(after_dt_frame)
-all_btn = ttk.Button(tbb_frame, text="전체 선택", width=8, command=on_all)
-all_btn.pack(side=LEFT, expand=YES)
-none_btn = ttk.Button(tbb_frame, text="전체 취소", width=8, command=on_none)
-none_btn.pack(side=LEFT, expand=YES)
-tbb_frame.pack(fill=BOTH, expand=YES)
-
-switch_absrel_frame(ttype.get())
-
-
-def update_sel_tables(db):
-    """이전 DB의 선택된 테이블 기억."""
-    global selected_tables
-    info("update_sel_tables for {}".format(db))
-    selected = []
-    for i, cv in enumerate(tbl_cvs):
-        if cv.get() == 1:
-            selected.append(tbl_ckbs[i]['text'])
-    selected_tables[db] = selected
-
-
-def validate_cfg():
-    """설정 값 확인.
-    
-    UI에 설정된 값들을 확인하고, ConfigParser에 넣어 반환
-    
-    Returns:
-        ConfigParser
-    """
-    info("validate_cfg")
-    _cfg = ConfigParser()
-    _cfg[profile] = {}  # 기본 프로파일
-
-    if ttype.get() == 'rel':
-        # 상대 시간
-        before = rel_bg_var.get()
-        offset = rel_off_var.get()
-        if before <= 0:
-            messagebox.showerror("Error", "몇 일 전부터 시작할지 양의 정수로 지정해 주세요.")
-            return
-        elif offset <= 0:
-            messagebox.showerror("Error", "몇 일치 데이터를 가져올지 양의 정수로 지정해 주세요.")
-            return
-        _cfg[profile]['ttype'] = 'rel'
-        _cfg[profile]['before'] = str(before)
-        _cfg[profile]['offset'] = str(offset)
-    else:
-        # 절대 시간
-        start = st_dp.get()
-        end = ed_dp.get()
-        db_name = db_combo.get()
-
-        if len(start) == 0:
-            messagebox.showerror("Error", "시작일을 선택해주세요.")
-            return
-        elif len(end) == 0:
-            messagebox.showerror("Error", "종료일을 선택해주세요.")
-            return
-        elif len(db_name) == 0:
-            messagebox.showerror("Error", "선택된 DB가 없습니다.")
-            return
-
-        start = parse(start).date()
-        end = parse(end).date()
-        if start > end:
-            messagebox.showerror("Error", "종료일이 시작일보다 빠릅니다.")
-            return
-        _cfg[profile]['ttype'] = 'abs'
-        _cfg[profile]['start'] = str(start)
-        _cfg[profile]['end'] = str(end)
-
-
-    # 가져올 행수를 체크
-    tbl_cnt = 0
-    for db, tbls in selected_tables.items():
-        for tbl in tbls:
-            tbl_cnt += 1
-            if ttype.get() == 'rel':
-                cnt = get_query_rows_rel(cursor, db, tbl, before, offset)
-            else:
-                cnt = get_query_rows_abs(cursor, db, tbl, start, end)
-            info("'{}' '{}' has {} rows".format(db, tbl, cnt))
-            if cnt > WARN_ROWS:
-                rv = messagebox.askquestion("경고", "{} DB의 {} 테이블의 행수가 매우 큽니다 ({:,} 행)."
-                                            "\n정말 가져오겠습니까?".format(db, tbl, cnt))
-                if rv != 'yes':
-                    return
-
-    if tbl_cnt == 0:
-        messagebox.showerror("Error", "선택된 테이블이 없습니다.")
-        return
-
-    # 선택된 테이블 기억
-    for db in selected_tables.keys():
-        tables = selected_tables[db]
-        if len(tables) > 0:
-            _cfg[profile]["db_" + db] = str(tables)
-
-    # 캐쉬 유효 시간
-    cache_valid_hour = lct_val.get()
-    if cache_valid_hour <= 0:
-        messagebox.showerror("Error", "캐쉬 수명은 최소 0보다 커야 합니다.")
-        return
-    _cfg[profile]['cache_valid_hour'] = str(lct_val.get())
-
-    return _cfg
-
-
-def on_save():
-    """설정 저장"""
-    global cfg
-    disable_controls()
-    set_wait_cursor()
-
-    db = db_combo.get()
-    # update_sel_tables(db)
-
-    # 설정 검증
-    _cfg = validate_cfg()
-    if _cfg is None:
-        return
-    if 'aws' in cfg:
-        _cfg['aws'] = cfg['aws']
-    save_config(_cfg)
-    win.destroy()
+    curpro = get_current_profile()
+    curpro.update_sel_tables()
+    curpro.update_targets_text()
 
 
 def on_aws():
@@ -491,75 +673,34 @@ def on_aws():
         try_connect()
 
 
-def on_del_cache():
-    del_cache()
-    messagebox.showinfo("Info", "로컬 캐쉬를 제거했습니다.")
-
-
-target_frame = LabelFrame(after_dt_frame, text="모든 선택된 대상")
-target_text = Text(target_frame, wrap="none", height=3.5, background=target_frame.cget('bg'), bd=0)
-target_text.grid_propagate(False)
-target_vsb = Scrollbar(target_frame, orient="vertical", command=target_text.yview)
-target_vsb.pack(side='right', fill='y')
-target_hsb = Scrollbar(target_frame, orient="horizontal", command=target_text.xview)
-target_hsb.pack(side="bottom", fill="x")
-target_text.configure(xscrollcommand=target_hsb.set, yscrollcommand=target_vsb.set)
-target_text.pack(fill='both', expand=True, padx=(15, 15), pady=(5, 20))
-target_frame.pack(side=TOP, fill=None, expand=False, padx=(20, 20), pady=(10, 10))
-
-confirm_frame = Frame(after_dt_frame)
-
-
-def update_targets_text():
-    """선택된 테이블들 표시."""
-    target_text.delete('1.0', END)
-    for db, tables in selected_tables.items():
-        if len(tables) == 0:
-            continue
-        text = "{} ({})\n".format(db, ','.join(tables))
-        target_text.insert(END, text)
-
-
-update_targets_text()
-
-lct_frame = Frame(confirm_frame)
-Label(lct_frame, text="로컬 캐쉬 유효 시간:").pack(side=LEFT)
-lct_etr = Entry(lct_frame, textvariable=lct_val, width=3, justify="center")
-lct_etr.pack(side=LEFT, padx=(5, 2))
-Label(lct_frame, text="시간").pack(side=LEFT)
-lct_frame.pack(side=TOP, pady=(20, 0))
+confirm_frame = Frame(win)
 
 aws_btn = ttk.Button(confirm_frame, text="AWS 계정", width=10, command=on_aws)
-aws_btn.pack(side=LEFT, expand=YES, padx=(20, 7), pady=(20, 20))
+aws_btn.pack(side=LEFT, expand=YES, padx=(20, 7), pady=10)
+save_btn = ttk.Button(confirm_frame, text="저장 후 종료", width=15, command=on_save)
+save_btn.pack(side=LEFT, expand=YES, padx=10, pady=10)
 
-flush_btn = ttk.Button(confirm_frame, text="로컬 캐쉬 제거", width=15, command=on_del_cache)
-flush_btn.pack(side=LEFT, expand=YES, padx=(7, 7), pady=(20, 20))
-
-save_btn = ttk.Button(confirm_frame, text="저장 후 종료", width=15,
-                        command=on_save)
-save_btn.pack(side=LEFT, expand=YES, padx=(7, 20), pady=(20, 20))
 confirm_frame.pack(fill=BOTH, expand=YES)
 
 
-DISABLE_CTRLS = [st_dp, ed_dp, all_btn, none_btn, lct_etr, aws_btn, flush_btn, db_combo,
-                 save_btn, rel_rbt, abs_rbt, rel_bg_etr, rel_off_etr, st_dp, ed_dp]
+global_disable_targets = [aws_btn, save_btn]
 
-
-def disable_controls():
-    for ctl in DISABLE_CTRLS:
-        ctl['state'] = 'disabled'
-    tbl_text['state'] = 'disabled'
-    for ckb in tbl_ckbs:
-        ckb['state'] = 'disabled'
-    win.update_idletasks()
+# for sname in iter_profile_sect(cfg):
+#     pname = sname[8:]
+#     pro = profiles[pname]
+#     on_db_sel(None)
 
 
 def enable_controls():
-    for ctl in DISABLE_CTRLS:
-        ctl['state'] = 'normal'
-    for ckb in tbl_ckbs:
-        ckb['state'] = 'normal'
-    db_combo['state'] = 'readonly'
+    for pro in profiles.values():
+        pro.enable_controls()
+
+    for ctrl in global_disable_targets:
+        ctrl['state'] = 'normal'
+
+    # for item in notebook.tabs():
+    #     notebook.tab(item, state='normal')
+    notebook.select(prev_tab)
 
 
 class ModelessDlg:
@@ -601,7 +742,6 @@ def try_connect():
         else:
             warning("Connect success.")
             enable_controls()
-            db_combo['values'] = databases
         finally:
             wait_dlg.top.destroy()
             unset_wait_cursor()
@@ -614,23 +754,52 @@ def try_connect():
         time.sleep(1)
 
 
-def find_first_db_idx():
-    for idx, db in enumerate(databases):
-        if first_sel_db == db:
-            return idx
-    return 0
-
 if 'win' not in sys.platform:
     style = ttk.Style()
     style.theme_use('clam')
 
 if not need_aws:
     try_connect()
-    first_sel_db = db_combo.current(find_first_db_idx())
-    on_db_sel(None)
+    # self.first_sel_db = db_combo.current(find_first_db_idx())
 else:
     disable_controls()
     aws_btn['state'] = 'normal'
+
+
+# 모든 프로파일에 DB 설정
+set_wait_cursor()
+disable_controls()
+
+for k, pro in profiles.items():
+    pro.set_databases(databases)
+
+def _db_set():
+    for sname in iter_profile_sect(cfg):
+        pname = sname[8:]
+        pro = profiles[pname]
+        pro.db_set()
+        
+    enable_controls()
+    unset_wait_cursor()
+
+
+win.after(10, _db_set)
+
+
+# def on_closing():
+#     unsaved = []
+#     for pro in profiles.values():
+#         if pro.unsaved:
+#             unsaved.append(pro.text)
+
+#     if len(unsaved) > 0:
+#         upros = unsaved.join(', ')
+#         msg = "프로파일을 저장하지 않았습니다.\n정말 종료하시겠습니까?".format(upros)
+#         if messagebox.askokcancel("종료", msg):
+#         win.destroy()
+
+# win.protocol("WM_DELETE_WINDOW", on_closing)
+
 
 win.mainloop()
 
