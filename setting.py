@@ -159,25 +159,30 @@ def on_del_cache():
 
 def on_save():
     """설정 저장"""
-    global cfg
+    global cfg, profiles
     set_wait_cursor()
     disable_controls()
 
-    # db = db_combo.get()
-    # update_sel_tables(db)
+    def _save(cfg):
+        _cfg = ConfigParser()
+        _cfg['aws'] = cfg['aws']
 
-    # 설정 검증
-    for pro in profiles.values():
-        pcfg = pro.validate_cfg()
-        if pcfg is None:
-            return
-        sname = "profile.{}".format(pro.name)
-        cfg[sname] = pcfg            
+        # 설정 검증
+        for pro in profiles.values():
+            pcfg = pro.validate_cfg()
+            if pcfg is None:
+                return
+            sname = "profile.{}".format(pro.name)
+            _cfg[sname] = pcfg            
 
-    save_config(cfg)
-    enable_controls()
-    unset_wait_cursor()
-    win.destroy()
+        cfg = _cfg
+
+        save_config(cfg)
+        enable_controls()
+        unset_wait_cursor()
+        win.destroy()
+
+    win.after(100, lambda: _save(cfg))
 
 
 class Profile:
@@ -426,7 +431,6 @@ class Profile:
             if tbl in selected:
                 cv.set(1)
             ckb = Checkbutton(self.tbl_text, text=tbl, variable=cv, command=on_check)
-            info("create table ckb {}".format(tbl))
             self.tbl_text.window_create("end", window=ckb)
             self.tbl_text.insert("end", "\n")
             self.tbl_ckbs.append(ckb)
@@ -500,9 +504,9 @@ class Profile:
             for tbl in tbls:
                 tbl_cnt += 1
                 if self.ttype.get() == 'rel':
-                    cnt = get_query_rows_rel(cursor, db, tbl, before, offset)
+                    cnt = get_query_rows_rel(cursor, db, tbl, before, offset, None)
                 else:
-                    cnt = get_query_rows_abs(cursor, db, tbl, start, end)
+                    cnt = get_query_rows_abs(cursor, db, tbl, start, end, None)
                 info("'{}' '{}' has {} rows".format(db, tbl, cnt))
                 if cnt > WARN_ROWS:
                     rv = messagebox.askquestion("경고", "{} DB의 {} 테이블의 행수가 매우 큽니다 ({:,} 행)."
@@ -573,7 +577,7 @@ def profile_exists(name):
 
 
 def on_add_profile():
-    pro_name = askstring(win, "새로운 프로파일 이름?")
+    pro_name = askstring("프로파일 생성", "새로운 프로파일 이름?", parent=win)
     if profile_exists(pro_name):
         messagebox.showerror("에러", "같은 이름의 프로파일이 이미 존재합니다.")
         return
@@ -587,7 +591,7 @@ def on_del_profile():
         return
     tab = notebook.select()
     pro_name = notebook.tab(tab)['text']
-    yes = messagebox.askokcancel(win, "'{}' 프로파일을 지우시겠습니까?".format(pro_name))
+    yes = messagebox.askokcancel("프로파일 삭제", "'{}' 프로파일을 지우시겠습니까?".format(pro_name), parent=win)
     if yes:
         notebook.forget(tab)
         del profiles[pro_name]

@@ -95,29 +95,39 @@ def check_import_data(cfg, cfg_hash):
         arg = sys.argv[1]
         with codecs.open(arg, 'r', encoding='utf-8') as fp:
             wrapper = fp.read()
+
         try:
             # Power BI 데이터 소스 임시 경로
             pbt_dir = re.search(PBTDIR_PTRN, wrapper).groups()[0]
-            # 프로파일 정보
-            scfg, dscript_hash = get_dscript_cfg(wrapper)
-            dscfg = scfg['default']
-            if 'profile' in dscfg:
-                pro_name = dscfg['profile']
         except Exception as e:
-            error("Error occurred in parsing PythonScriptWrapper.py:")
-            error(str(e))
-            info(wrapper)
-            sys.exit()
+            error("Can not find pbt_dir in PythonScriptWrapper.py:")
+            info(wrapper)   
+            sys.exit(-1)
+
+        try:
+            # 프로파일 정보
+            dscfg, dscript_hash = get_dscript_cfg(wrapper)
+            ddscfg = dscfg['default']
+            if 'profile' in ddscfg:
+                pro_name = ddscfg['profile']
+        except Exception as e:
+            error("Invalid data script in PythonScriptWrapper.py:")
+            info(wrapper)   
+            info("Continue with default profile.")
     else:
-        pbt_dir = os.path.join(mod_dir, 'temp')
-        if not os.path.isdir(pbt_dir):
-            os.mkdir(pbt_dir)
+        # VS Code에서 실행?
+        critical("======= No argument. Exit now =======")
+        sys.exit()
+        # pbt_dir = os.path.join(mod_dir, 'temp')
+        # if not os.path.isdir(pbt_dir):
+        #     os.mkdir(pbt_dir)
 
     # 설정 파일에서 해당 프로파일 정보 찾아보기
     pkey = "profile.{}".format(pro_name)
     if pkey in cfg:
         pcfg = cfg[pkey]
     else:
+        error("Can not find '{}' profile.".format(pro_name))
         win32api.MessageBox(0, "설정에서 '{}' 프로파일을 찾을 수 없습니다.".format(pro_name))
         sys.exit(-1)
 
@@ -180,7 +190,7 @@ def check_import_data(cfg, cfg_hash):
         info("No valid cache. Import now.")
 
     # 아니면 새로 가져옴
-    _import_profile_data(cfg, pcfg, cache_dir, meta_path, cfg_hash, dscript_hash)
+    _import_profile_data(cfg, pcfg, dscfg, cache_dir, meta_path, cfg_hash, dscript_hash)
 
 
 def save_metadata(meta_path, cfg_hash, dscript_hash):
@@ -198,7 +208,7 @@ def save_metadata(meta_path, cfg_hash, dscript_hash):
         meta.write(fp)
 
 
-def _import_profile_data(cfg, pcfg, cache_dir, meta_path, cfg_hash, dscript_hash):
+def _import_profile_data(cfg, pcfg, dscfg, cache_dir, meta_path, cfg_hash, dscript_hash):
     """설정대로 프로파일 데이터 가져오기.
     
     - Power BI에서 불려짐
@@ -206,8 +216,9 @@ def _import_profile_data(cfg, pcfg, cache_dir, meta_path, cfg_hash, dscript_hash
     - 아니면 새로 가져옴
 
     Args:
-        cfg: 설정 객체
-        pcfg: 설정 객채 내 프로파일 섹션
+        cfg (ConfigParser): 설정
+        pcfg: 프로파일 설정
+        dscfg: 데이터 스크립트 설정
         cache_dir: 프로파일 용 캐쉬 디렉토리
         meta_path: 프로파일 용 메티파일 경로
     """
@@ -240,17 +251,21 @@ def _import_profile_data(cfg, pcfg, cache_dir, meta_path, cfg_hash, dscript_hash
         for tbl in tables:
             # 쿼리 준비
             if ttype == 'rel':
-                cnt = get_query_rows_rel(cursor, db, tbl, before, offset)
-                query = make_query_rel(db, tbl, before, offset, False)
-
+                cnt = get_query_rows_rel(cursor, db, tbl, before, offset, dscfg)
+                query = make_query_rel(db, tbl, before, offset, dscfg, False)
             else:
-                cnt = get_query_rows_abs(cursor, db, tbl, start, end)
-                query = make_query_abs(db, tbl, start, end, False)
+                cnt = get_query_rows_abs(cursor, db, tbl, start, end, dscfg)
+                query = make_query_abs(db, tbl, start, end, dscfg, False)
 
             # 가져옴
             warning("Import '{}' ({:,} rows) from '{}'".format(tbl, cnt, db))
             info("  query: {}".format(query))
-            df = pd.read_sql(query, conn)
+            try:
+                df = pd.read_sql(query, conn)
+            except Exception:
+                win32api.MessageBox(0, "다음 쿼리에 에러가 있습니다:\n" + query, "쿼리 에러")
+                sys.exit(-1)
+
             csv_file = "{}.{}.csv".format(db, tbl)
             spath = os.path.join(cache_dir, csv_file)
             dpath = os.path.join(pbt_dir, csv_file)            
