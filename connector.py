@@ -72,11 +72,15 @@ def get_dscript_cfg(wrapper):
     end = ed_match.span()[0] - 1
     dscript = "[default]\n{}".format(wrapper[begin:end].strip())
     dscript_hash = get_text_hash(dscript)
-    info("=== Profile Settings in PythonScriptWrapper.py ===")
+    info("=== Data script in PythonScriptWrapper.py ===")
     info(dscript)
     info("======")
     cfg = ConfigParser()
-    cfg.read_string(dscript)
+    try:
+        cfg.read_string(dscript)
+    except Exception as e:
+        warning("Invalid config format: {}".format(str(e)))
+        return
     return cfg, dscript_hash
 
 
@@ -90,7 +94,8 @@ def check_import_data(cfg, cfg_hash):
 
     # PythonScriptWrapper.py에서 데이터 소스용 임시 디렉토리와 데이터 스크립트 정보 얻음
     pro_name = 'default'
-    dscript_hash = None
+    dscript_hash = ''
+    dscfg = None
     if POWER_BI:
         arg = sys.argv[1]
         with codecs.open(arg, 'r', encoding='utf-8') as fp:
@@ -106,14 +111,17 @@ def check_import_data(cfg, cfg_hash):
 
         try:
             # 프로파일 정보
-            dscfg, dscript_hash = get_dscript_cfg(wrapper)
-            ddscfg = dscfg['default']
-            if 'profile' in ddscfg:
-                pro_name = ddscfg['profile']
+            res = get_dscript_cfg(wrapper)
+            if res is not None:
+                dscfg, dscript_hash = res
+                ddscfg = dscfg['default']
+                if 'profile' in ddscfg:
+                    pro_name = ddscfg['profile']
         except Exception as e:
-            error("Invalid data script in PythonScriptWrapper.py:")
-            info(wrapper)   
-            info("Continue with default profile.")
+            error("Data script error: {}".format(str(e)))
+
+        if pro_name == 'default':
+            info("Using default profile.")
     else:
         # VS Code에서 실행?
         critical("======= No argument. Exit now =======")
