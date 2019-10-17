@@ -202,7 +202,7 @@ class Profile:
         self.ttype = StringVar()
         self.ttype.set('rel')
         self.lct_val = IntVar()
-        self.lct_val.set(1)
+        self.lct_val.set(6)
         self.rel_bg_var = IntVar()
         self.rel_bg_var.set(1)
         self.rel_off_var = IntVar()
