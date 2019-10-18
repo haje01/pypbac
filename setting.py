@@ -779,7 +779,7 @@ def _db_set():
     # 최신 버전 확인
     rel = get_latest_release()
     info("version: local {} - remote {}".format(version, rel[0]))
-    if rel is not None and rel[0] >= version:
+    if rel is not None and rel[0] > version:
         rver, rtitle, rlines = rel[0], rel[1], rel[2]
         VersionDlg(win, "최신 버전({}) 정보".format(rel[0]), rtitle, rlines)
 
