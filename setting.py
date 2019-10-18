@@ -10,7 +10,7 @@ from tkinter.simpledialog import askstring
 from pyathena import connect
 
 from datepicker import Datepicker
-from tkSimpleDialog import Dialog, ModelessDlg, ConfirmDlg
+from dialog import Dialog, ModelessDlg, ConfirmDlg
 from util import *
 
 WIN_WIDTH = 370
