@@ -5,7 +5,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 temp/
-PythonScriptWrapper.py
 .vscode/
 
 # C extensions

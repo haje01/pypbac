@@ -1,4 +1,5 @@
 import os 
+import re
 import logging
 import hashlib
 from configparser import ConfigParser
@@ -250,3 +251,27 @@ def get_query_rows_abs(cursor, db, table, start_dt, end_dt, dscfg):
     info("  query: {}".format(query))
     rows = cursor.execute(query).fetchone()
     return rows[0]
+
+
+def get_version(use_three=True):
+    """version.txt 에서 버전을 구함."""
+    path = os.path.join(mod_dir, 'version.txt')
+    info("get_version() from '{}'".format(path))
+    with open(path, 'rt') as fp:
+        txt = fp.read()
+        try:
+            match = re.search(r'filevers=\((.*)\)', txt)
+            elms = match.groups()[0].split(',')
+            elms = [e.strip() for e in elms]
+        except Exception as e:
+            error("get_version() error {} - {}".format(str(e), txt))
+        else:
+            if use_three:
+                elms = elms[:3]
+            version = '.'.join(elms)
+            return version
+
+
+if __name__ == "__main__":
+    # test script here.
+    get_version()

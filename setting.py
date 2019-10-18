@@ -27,6 +27,11 @@ profiles = {}
 def save_config(cfg):
     global org_cfg
 
+    if 'default' not in cfg:
+        cfg['default'] = {}
+
+    cfg['default']['version'] = get_version()
+
     info("Save config file to {}".format(cfg_path))
     with open(cfg_path, 'w') as cfgfile:
         cfg.write(cfgfile)
