@@ -1,5 +1,7 @@
 from tkinter import *
 import os
+import webbrowser
+
 
 class Dialog(Toplevel):
 
@@ -167,7 +169,14 @@ class VersionDlg(ModalDlg):
         self.text['state'] = 'disabled'
         self.frame.pack(side=TOP, fill='both', expand=True, padx=20, pady=(10, 0))
 
-        Button(self.top, text="OK", command=self.top.destroy, width=8).pack(side=BOTTOM, pady=10)
+        self.bframe = Frame(self.top)
+        Button(self.bframe, text="받으러 가기", command=self.open, width=13).pack(side=LEFT, padx=10)
+        Button(self.bframe, text="닫기", command=self.top.destroy, width=7).pack(side=LEFT, padx=10)
+        self.bframe.pack(side=BOTTOM, pady=10)
+
+    def open(self):
+        webbrowser.open("https://github.com/haje01/pypbac/releases")
+        self.top.master.destroy()
 
 
 class OkCancelDlg(ModalDlg):
