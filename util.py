@@ -263,19 +263,21 @@ def get_local_version():
     """
     path = os.path.join(mod_dir, 'version.txt')
     info("get_version() from '{}'".format(path))
-    with open(path, 'rt') as fp:
-        txt = fp.read()
-        try:
-            match = re.search(r'filevers=\((.*)\)', txt)
-            elms = match.groups()[0].split(',')
-            elms = [e.strip() for e in elms]
-        except Exception as e:
-            error("get_version() error {} - {}".format(str(e), txt))
-        else:
-            elms = elms[:3]
-            version = 'v' + '.'.join(elms)  
-            return version
-
+    try:
+        with open(path, 'rt') as fp:
+            txt = fp.read()
+            try:
+                match = re.search(r'filevers=\((.*)\)', txt)
+                elms = match.groups()[0].split(',')
+                elms = [e.strip() for e in elms]
+            except Exception as e:
+                error("get_version() error {} - {}".format(str(e), txt))
+            else:
+                elms = elms[:3]
+                version = 'v' + '.'.join(elms)  
+                return version
+    except Exception as e:
+        error("File open error: {}".format(e))
 
 def get_latest_release():
 
@@ -284,13 +286,14 @@ def get_latest_release():
     주의: 시간당 60회 아상 요청하면 "API rate limit exceeded" 에러가 발생. 이때는 None 리턴
     
     Returns:
-        tuple: 버전 태그, 버전 타이틀, 버전 설명, 생성 날자
+        tuple: 버전 태그, 버전 타이틀, 버전 설명, 생성 날자, pre-release 여부
     """
+    info("get_latest_release")
     url = "https://api.github.com/repos/haje01/pypbac/releases/latest"
     res = requests.get(url)
     body = res.json()
     try:
-        return body['tag_name'], body['name'], body['body'], body['created_at']
+        return body['tag_name'], body['name'], body['body'], body['created_at'], body['prerelease']
     except Exception as e:
         error("Invalid release info - {}".format(str(e)))
         if 'message' in body:
@@ -299,4 +302,5 @@ def get_latest_release():
 
 if __name__ == "__main__":
     # test script here.
-    get_remote_version()
+    rel = get_latest_release()
+    pass

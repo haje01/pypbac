@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from shutil import copyfile
 from pathlib import Path
 
+import tkinter  # pyinstaller 빌드에서 tcl/tk 포함되지 않는 것 방지
 import win32api
 import pandas as pd
 from dateutil.parser import parse

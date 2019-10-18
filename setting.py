@@ -10,7 +10,7 @@ from tkinter.simpledialog import askstring
 from pyathena import connect
 
 from datepicker import Datepicker
-from dialog import Dialog, ModelessDlg, ConfirmDlg
+from dialog import Dialog, ModelessDlg, ConfirmDlg, VersionDlg
 from util import *
 
 WIN_WIDTH = 370
@@ -159,7 +159,8 @@ def on_no_table():
 def on_del_cache():
     curpro = get_current_profile()
     del_cache(curpro.name)
-    messagebox.showinfo("정보", "프로파일 '{}' 의 캐쉬를 제거했습니다.".format(curpro.name))
+    # messagebox.showinfo("정보", "프로파일 '{}' 의 캐쉬를 제거했습니다.".format(curpro.name))
+    ConfirmDlg(win, "정보", "프로파일 '{}' 의 캐쉬를 제거했습니다.".format(curpro.name), width=300, x=30)
 
 
 def on_save():
@@ -777,8 +778,10 @@ def _db_set():
 
     # 최신 버전 확인
     rel = get_latest_release()
+    info("version: local {} - remote {}".format(version, rel[0]))
     if rel is not None and rel[0] > version:
-        ConfirmDlg(win, "업데이트 정보", "최신 버전({})이 나왔습니다.".format(rel[0]))
+        rver, rtitle, rlines = rel[0], rel[1], rel[2]
+        VersionDlg(win, "최신 버전({}) 정보".format(rel[0]), rtitle, rlines)
 
     enable_controls()
     unset_wait_cursor()

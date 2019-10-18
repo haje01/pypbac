@@ -6,6 +6,7 @@ __pycache__/
 *$py.class
 temp/
 .vscode/
+zia*
 
 # C extensions
 *.so

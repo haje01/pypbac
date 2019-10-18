@@ -106,7 +106,7 @@ class ModelessDlg:
 
 class ModalDlg:
 
-    def __init__(self, parent, title, width=250, height=100, x=60, y=150):
+    def __init__(self, parent, title, width, height, x, y):
         top = self.top = Toplevel(parent)
         px = parent.winfo_x()
         py = parent.winfo_y()
@@ -118,7 +118,7 @@ class ModalDlg:
 
 class ConfirmDlg(ModalDlg):
 
-    def __init__(self, parent, title, message, type="information"):
+    def __init__(self, parent, title, message, width=250, height=100, x=60, y=150, type="information"):
         """Confirm 대화창 초기화
 
         Args:
@@ -128,7 +128,7 @@ class ConfirmDlg(ModalDlg):
             type: 아이콘 타입 (warning, error, information, question 중 하나)
 
         """
-        super().__init__(parent, title)
+        super().__init__(parent, title, width, height, x, y)
         image = "::tk::icons::{}".format(type)
         self.frame = Frame(self.top)
         Label(self.frame, image=image).pack(side=LEFT)
@@ -137,9 +137,42 @@ class ConfirmDlg(ModalDlg):
         Button(self.top, text="OK", command=self.top.master.destroy, width=8).pack(side=TOP)
 
 
+class VersionDlg(ModalDlg):
+
+    def __init__(self, parent, title, rel_title, rel_lines, width=330, height=180, x=20, y=40):
+        """버전 대화창 초기화
+
+        Args:
+            parent: 부모 윈도우
+            title: 타이틀
+            lines: 공지 (멀티 라인)
+            message: 메시지
+
+        """
+        super().__init__(parent, title, width, height, x, y)
+        self.top.resizable(True, True)
+
+        self.frame = LabelFrame(self.top, text=rel_title)
+        self.text = Text(self.frame, wrap="none", height=3.5, background=self.frame.cget('bg'), bd=0)
+        self.text.grid_propagate(False)
+        self.vsb = Scrollbar(self.frame, orient="vertical", command=self.text.yview)
+        self.vsb.pack(side='right', fill='y')
+        self.hsb = Scrollbar(self.frame, orient="horizontal", command=self.text.xview)
+        self.hsb.pack(side="bottom", fill="x")
+        self.text.configure(xscrollcommand=self.hsb.set, yscrollcommand=self.vsb.set)
+        for line in rel_lines.split('\n'):
+            self.text.insert(END, line.strip() + '\n')
+                         
+        self.text.pack(fill='both', expand=True, padx=15, pady=(5, 20))
+        self.text['state'] = 'disabled'
+        self.frame.pack(side=TOP, fill='both', expand=True, padx=20, pady=(10, 0))
+
+        Button(self.top, text="OK", command=self.top.destroy, width=8).pack(side=BOTTOM, pady=10)
+
+
 class OkCancelDlg(ModalDlg):
 
-    def __init__(self, parent, title, message, type="information"):
+    def __init__(self, parent, title, message, width=250, height=100, x=60, y=150, type="information"):
         """Ok/Cancel 대화창 초기화
 
         Args:
@@ -149,13 +182,13 @@ class OkCancelDlg(ModalDlg):
             type: 아이콘 타입 (warning, error, information, question 중 하나)
 
         """
-        super().__init__(parent, title)
+        super().__init__(parent, title, width, height, x, y)
         image = "::tk::icons::{}".format(type)
         self.frame = Frame(self.top)
         Label(self.frame, image=image).pack(side=LEFT)
         Label(self.frame, text=message).pack(side=LEFT)
         self.frame.pack(side=TOP, pady=12)
         self.cframe = Frame(self.top)
-        Button(self.cframe, text="OK", command=self.top.master.destroy, width=8).pack(side=LEFT, padx=10)
-        Button(self.cframe, text="Cancel", command=self.top.master.destroy, width=8).pack(side=LEFT, padx=10)
+        Button(self.cframe, text="OK", command=self.top.destroy, width=8).pack(side=LEFT, padx=10)
+        Button(self.cframe, text="Cancel", command=self.top.destroy, width=8).pack(side=LEFT, padx=10)
         self.cframe.pack(side=TOP)
