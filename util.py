@@ -5,7 +5,9 @@ import hashlib
 from configparser import ConfigParser
 from shutil import rmtree
 from datetime import datetime, timedelta, date
+
 from dateutil.parser import parse
+import requests
 
 LOG_FILE = 'log.txt'
 CFG_FILE = 'config.txt'
@@ -253,8 +255,12 @@ def get_query_rows_abs(cursor, db, table, start_dt, end_dt, dscfg):
     return rows[0]
 
 
-def get_version(use_three=True):
-    """version.txt 에서 버전을 구함."""
+def get_local_version():
+    """로컬(version.txt) 버전을 구함.
+    
+    [0, 0, 3, 0] -> "v0.0.3" 형태로 바꾸어 사용
+    
+    """
     path = os.path.join(mod_dir, 'version.txt')
     info("get_version() from '{}'".format(path))
     with open(path, 'rt') as fp:
@@ -266,12 +272,31 @@ def get_version(use_three=True):
         except Exception as e:
             error("get_version() error {} - {}".format(str(e), txt))
         else:
-            if use_three:
-                elms = elms[:3]
-            version = '.'.join(elms)
+            elms = elms[:3]
+            version = 'v' + '.'.join(elms)  
             return version
+
+
+def get_latest_release():
+
+    """원격(github)에 릴리즈된 최신 버전 정보 구함.
+
+    주의: 시간당 60회 아상 요청하면 "API rate limit exceeded" 에러가 발생. 이때는 None 리턴
+    
+    Returns:
+        tuple: 버전 태그, 버전 타이틀, 버전 설명, 생성 날자
+    """
+    url = "https://api.github.com/repos/haje01/pypbac/releases/latest"
+    res = requests.get(url)
+    body = res.json()
+    try:
+        return body['tag_name'], body['name'], body['body'], body['created_at']
+    except Exception as e:
+        error("Invalid release info - {}".format(str(e)))
+        if 'message' in body:
+            warning(body['message'])
 
 
 if __name__ == "__main__":
     # test script here.
-    get_version()
+    get_remote_version()

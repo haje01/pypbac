@@ -10,7 +10,7 @@ from tkinter.simpledialog import askstring
 from pyathena import connect
 
 from datepicker import Datepicker
-import tkSimpleDialog
+from tkSimpleDialog import Dialog, ModelessDlg, ConfirmDlg
 from util import *
 
 WIN_WIDTH = 370
@@ -30,7 +30,7 @@ def save_config(cfg):
     if 'default' not in cfg:
         cfg['default'] = {}
 
-    cfg['default']['version'] = get_version()
+    cfg['default']['version'] = get_local_version()
 
     info("Save config file to {}".format(cfg_path))
     with open(cfg_path, 'w') as cfgfile:
@@ -38,7 +38,7 @@ def save_config(cfg):
     org_cfg = deepcopy(cfg)
 
 
-class AWSConfigDlg(tkSimpleDialog.Dialog):
+class AWSConfigDlg(Dialog):
 
     def body(self, master):
 
@@ -74,17 +74,17 @@ class AWSConfigDlg(tkSimpleDialog.Dialog):
         s3_stage_dir = self.s3dir.get()
 
         if len(access_key) == 0:
-            messagebox.showerror("Error", "Access Key를 입력해주세요.")
+            messagebox.showerror("에러", "Access Key를 입력해주세요.")
             self.initial_focus = self.ackey
             return 0
 
         if len(secret_key) == 0:
-            messagebox.showerror("Error", "Secret Key를 입력해주세요.")
+            messagebox.showerror("에러", "Secret Key를 입력해주세요.")
             self.initial_focus = self.sckey
             return 0
 
         if len(s3_stage_dir) == 0:
-            messagebox.showerror("Error", "S3 Stage 경로를 입력해주세요.")
+            messagebox.showerror("에러", "S3 Stage 경로를 입력해주세요.")
             self.initial_focus = self.s3dir
             return 0
         return 1
@@ -159,7 +159,7 @@ def on_no_table():
 def on_del_cache():
     curpro = get_current_profile()
     del_cache(curpro.name)
-    messagebox.showinfo("Info", "프로파일 '{}' 의 캐쉬를 제거했습니다.".format(curpro.name))
+    messagebox.showinfo("정보", "프로파일 '{}' 의 캐쉬를 제거했습니다.".format(curpro.name))
 
 
 def on_save():
@@ -469,10 +469,10 @@ class Profile:
             before = self.rel_bg_var.get()
             offset = self.rel_off_var.get()
             if before <= 0:
-                messagebox.showerror("Error", "몇 일 전부터 시작할지 양의 정수로 지정해 주세요.")
+                messagebox.showerror("에러", "몇 일 전부터 시작할지 양의 정수로 지정해 주세요.")
                 return
             elif offset <= 0:
-                messagebox.showerror("Error", "몇 일치 데이터를 가져올지 양의 정수로 지정해 주세요.")
+                messagebox.showerror("에러", "몇 일치 데이터를 가져올지 양의 정수로 지정해 주세요.")
                 return
             pcfg['ttype'] = 'rel'
             pcfg['before'] = str(before)
@@ -484,19 +484,19 @@ class Profile:
             db_name = self.db_combo.get()
 
             if len(start) == 0:
-                messagebox.showerror("Error", "시작일을 선택해주세요.")
+                messagebox.showerror("에러", "시작일을 선택해주세요.")
                 return
             elif len(end) == 0:
-                messagebox.showerror("Error", "종료일을 선택해주세요.")
+                messagebox.showerror("에러", "종료일을 선택해주세요.")
                 return
             elif len(db_name) == 0:
-                messagebox.showerror("Error", "선택된 DB가 없습니다.")
+                messagebox.showerror("에러", "선택된 DB가 없습니다.")
                 return
 
             start = parse(start).date()
             end = parse(end).date()
             if start > end:
-                messagebox.showerror("Error", "종료일이 시작일보다 빠릅니다.")
+                messagebox.showerror("에러", "종료일이 시작일보다 빠릅니다.")
                 return
             pcfg['ttype'] = 'abs'
             pcfg['start'] = str(start)
@@ -520,7 +520,7 @@ class Profile:
                         return
 
         if tbl_cnt == 0:
-            messagebox.showerror("Error", "선택된 테이블이 없습니다.")
+            messagebox.showerror("에러", "선택된 테이블이 없습니다.")
             return
 
         # 선택된 테이블 기억
@@ -532,7 +532,7 @@ class Profile:
         # 캐쉬 유효 시간
         cache_valid_hour = self.lct_val.get()
         if cache_valid_hour <= 0:
-            messagebox.showerror("Error", "캐쉬 수명은 최소 0보다 커야 합니다.")
+            messagebox.showerror("에러", "캐쉬 수명은 최소 0보다 커야 합니다.")
             return
         pcfg['cache_valid_hour'] = str(self.lct_val.get())
 
@@ -563,7 +563,8 @@ class Profile:
 
 info("Construct GUI.")
 win = Tk()
-win.title("Athena 가져오기 설정")
+version = get_local_version()
+win.title("Athena 가져오기({}) 설정".format(version))
 win.geometry("{}x{}+100+100".format(WIN_WIDTH, WIN_HEIGHT))
 
 
@@ -712,16 +713,6 @@ def enable_controls():
     notebook.select(prev_tab)
 
 
-class ModelessDlg:
-
-    def __init__(self, parent, text):
-        top = self.top = Toplevel(parent)
-        x = win.winfo_x()
-        y = win.winfo_y()
-        top.geometry("%dx%d%+d%+d" % (220, 90, x + 80, y + 160))        
-        Label(top, text=text).pack(expand=True, fill='both')
-
-
 def try_connect():
     global cursor
 
@@ -763,10 +754,6 @@ def try_connect():
         time.sleep(1)
 
 
-if 'win' not in sys.platform:
-    style = ttk.Style()
-    style.theme_use('clam')
-
 if not need_aws:
     try_connect()
     # self.first_sel_db = db_combo.current(find_first_db_idx())
@@ -787,10 +774,14 @@ def _db_set():
         pname = sname[8:]
         pro = profiles[pname]
         pro.db_set()
-        
+
+    # 최신 버전 확인
+    rel = get_latest_release()
+    if rel is not None and rel[0] > version:
+        ConfirmDlg(win, "업데이트 정보", "최신 버전({})이 나왔습니다.".format(rel[0]))
+
     enable_controls()
     unset_wait_cursor()
-
 
 win.after(10, _db_set)
 

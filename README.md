@@ -139,7 +139,16 @@ profile = service
 1: country = 'kr'
 ```
 
-## 빌드를 위한 설치 (개발자용)
+## 개발자를 위한 설명
+
+이후는 pypbac 개발자를 위한 설명입니다.
+
+### 의존 모듈 설치
+코드를 직접 실행하기 위해서, 다음과 같은 모듈 설치가 필요합니다.
+
+- `pip install pyathena, dateutil, requests, pywin32`
+
+### 빌드를 위한 설치
 
 pypbac의 코드를 받은 후 직접 빌드(.exe 생성)하기 위해서는 아래와 같은 설치가 필요합니다.
 

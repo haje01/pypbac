@@ -92,3 +92,70 @@ class Dialog(Toplevel):
     def apply(self):
 
         pass # override
+
+
+class ModelessDlg:
+
+    def __init__(self, parent, text, width=220, height=90, x=70, y=150):
+        top = self.top = Toplevel(parent)
+        px = parent.winfo_x()
+        py = parent.winfo_y()
+        top.geometry("%dx%d%+d%+d" % (width, height, px + x, py + y))        
+        Label(top, text=text).pack(expand=True, fill='both')
+
+
+class ModalDlg:
+
+    def __init__(self, parent, title, width=250, height=100, x=60, y=150):
+        top = self.top = Toplevel(parent)
+        px = parent.winfo_x()
+        py = parent.winfo_y()
+        top.geometry("%dx%d%+d%+d" % (width, height, px + x, py + y))        
+        top.details_expanded = False
+        top.resizable(False, False)
+        top.title(title)
+
+
+class ConfirmDlg(ModalDlg):
+
+    def __init__(self, parent, title, message, type="information"):
+        """Confirm 대화창 초기화
+
+        Args:
+            parent: 부모 윈도우
+            title: 타이틀
+            message: 메시지
+            type: 아이콘 타입 (warning, error, information, question 중 하나)
+
+        """
+        super().__init__(parent, title)
+        image = "::tk::icons::{}".format(type)
+        self.frame = Frame(self.top)
+        Label(self.frame, image=image).pack(side=LEFT)
+        Label(self.frame, text=message).pack(side=LEFT)
+        self.frame.pack(side=TOP, pady=12)
+        Button(self.top, text="OK", command=self.top.master.destroy, width=8).pack(side=TOP)
+
+
+class OkCancelDlg(ModalDlg):
+
+    def __init__(self, parent, title, message, type="information"):
+        """Ok/Cancel 대화창 초기화
+
+        Args:
+            parent: 부모 윈도우
+            title: 타이틀
+            message: 메시지
+            type: 아이콘 타입 (warning, error, information, question 중 하나)
+
+        """
+        super().__init__(parent, title)
+        image = "::tk::icons::{}".format(type)
+        self.frame = Frame(self.top)
+        Label(self.frame, image=image).pack(side=LEFT)
+        Label(self.frame, text=message).pack(side=LEFT)
+        self.frame.pack(side=TOP, pady=12)
+        self.cframe = Frame(self.top)
+        Button(self.cframe, text="OK", command=self.top.master.destroy, width=8).pack(side=LEFT, padx=10)
+        Button(self.cframe, text="Cancel", command=self.top.master.destroy, width=8).pack(side=LEFT, padx=10)
+        self.cframe.pack(side=TOP)
