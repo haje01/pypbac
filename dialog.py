@@ -139,7 +139,7 @@ class ConfirmDlg(ModalDlg):
 
 class VersionDlg(ModalDlg):
 
-    def __init__(self, parent, title, rel_title, rel_lines, width=330, height=180, x=20, y=40):
+    def __init__(self, parent, title, rel_title, rel_lines, width=330, height=180, x=20, y=50):
         """버전 대화창 초기화
 
         Args:

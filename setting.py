@@ -779,7 +779,7 @@ def _db_set():
     # 최신 버전 확인
     rel = get_latest_release()
     info("version: local {} - remote {}".format(version, rel[0]))
-    if rel is not None and rel[0] > version:
+    if rel is not None and rel[0] >= version:
         rver, rtitle, rlines = rel[0], rel[1], rel[2]
         VersionDlg(win, "최신 버전({}) 정보".format(rel[0]), rtitle, rlines)
 
@@ -787,22 +787,6 @@ def _db_set():
     unset_wait_cursor()
 
 win.after(10, _db_set)
-
-
-# def on_closing():
-#     unsaved = []
-#     for pro in profiles.values():
-#         if pro.unsaved:
-#             unsaved.append(pro.text)
-
-#     if len(unsaved) > 0:
-#         upros = unsaved.join(', ')
-#         msg = "프로파일을 저장하지 않았습니다.\n정말 종료하시겠습니까?".format(upros)
-#         if messagebox.askokcancel("종료", msg):
-#         win.destroy()
-
-# win.protocol("WM_DELETE_WINDOW", on_closing)
-
 
 win.mainloop()
 
