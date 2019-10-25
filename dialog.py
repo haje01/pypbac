@@ -1,7 +1,7 @@
 from tkinter import *
 import os
 import webbrowser
-from table import Table
+
 
 
 class Dialog(Toplevel):
