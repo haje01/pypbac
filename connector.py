@@ -258,13 +258,16 @@ def _import_profile_data(cfg, pcfg, dscfg, cache_dir, meta_path, cfg_hash, dscri
         db = key[3:]
         tables = eval(pcfg[key])
         for tbl in tables:
+            cols = None
+            if type(tbl) is not str:
+                tbl, cols = tbl
             # 쿼리 준비
             if ttype == 'rel':
                 cnt = get_query_rows_rel(cursor, db, tbl, before, offset, dscfg)
-                query = make_query_rel(db, tbl, before, offset, dscfg, False)
+                query = make_query_rel(db, tbl, before, offset, dscfg, "default", cols)
             else:
                 cnt = get_query_rows_abs(cursor, db, tbl, start, end, dscfg)
-                query = make_query_abs(db, tbl, start, end, dscfg, False)
+                query = make_query_abs(db, tbl, start, end, dscfg, "default", cols)
 
             # 가져옴
             warning("Import '{}' ({:,} rows) from '{}'".format(tbl, cnt, db))

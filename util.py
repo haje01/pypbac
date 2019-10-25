@@ -133,7 +133,7 @@ def del_cache(pro_name):
     os.mkdir(pcache_dir)
 
 
-def make_query_rel(db, table, before, offset, dscfg, for_count):
+def make_query_rel(db, table, before, offset, dscfg, mode, cols=None):
     """상대 시간으로 질의를 만듦.
 
     Args:
@@ -142,7 +142,8 @@ def make_query_rel(db, table, before, offset, dscfg, for_count):
         before (date): 몇 일 전부터
         offset (date): 몇 일치 
         dscfg (ConfigParser): 데이터 스크립트 설정
-        for_count: 행수 구하기 여부
+        mode: 쿼리 모드 ('count' - 행 수 구하기, 'preview' - 프리뷰)
+        cols: 명시적 선택 컬럼
     """
     assert before > 0 and offset > 0
     today = datetime.today().date()
@@ -150,7 +151,7 @@ def make_query_rel(db, table, before, offset, dscfg, for_count):
     start_dt = end_dt - timedelta(days=offset - 1)
     start_dt = start_dt.strftime('%Y%m%d')
     end_dt = end_dt.strftime('%Y%m%d')
-    return _make_query(db, table, start_dt, end_dt, dscfg, for_count)
+    return _make_query(db, table, start_dt, end_dt, dscfg, mode, cols)
 
 
 def _add_column_query(db, table, query, dscfg):
@@ -203,13 +204,20 @@ def _add_filter_query(db, table, query, dscfg):
     return query
 
 
-def _make_query(db, table, start_dt, end_dt, dscfg, for_count):
-    if not for_count:
-        query = "SELECT *"
+def _make_query(db, table, start_dt, end_dt, dscfg, mode, cols):
+    assert mode in ('default', 'count', 'preview')
+
+    if mode in ('default', 'preview'):
+        if cols is None:
+            query = "SELECT *"
+        else:
+            scols = ', '.join(cols)
+            query = "SELECT {}".format(scols)
         if dscfg is not None:
             query = _add_column_query(db, table, query, dscfg)
-    else:
-        query = "SELECT COUNT(*) as cnt"
+    elif mode == 'count':
+        query = "SELECT COUNT(*) AS cnt"
+
     if start_dt == end_dt:
         query += " FROM {}.{} WHERE (year || month || day) = '{}'".\
             format(db, table, end_dt)
@@ -219,10 +227,13 @@ def _make_query(db, table, start_dt, end_dt, dscfg, for_count):
                 format(db, table, start_dt, end_dt)
         if dscfg is not None:                
             query = _add_filter_query(db, table, query, dscfg)
+    
+    if mode == 'preview':
+        query += " LIMIT 50"
     return query
 
 
-def make_query_abs(db, table, start_dt, end_dt, dscfg, for_count):
+def make_query_abs(db, table, start_dt, end_dt, dscfg, mode, cols=None):
     """절대 시간으로 질의를 만듦.
 
     Args:
@@ -231,28 +242,59 @@ def make_query_abs(db, table, start_dt, end_dt, dscfg, for_count):
         start_dt (date): 시작일
         end_dt (date): 종료일
         dscfg (ConfigParser): 데이터 스크립트 설정
-        for_count: 행수 구하기 여부
+        mode: 쿼리 모드 ('count' - 행 수 구하기, 'preview' - 프리뷰)
+        cols: 명시적 선택 컬럼
     """
     assert type(start_dt) is date and type(end_dt) is date
     start_dt = start_dt.strftime('%Y%m%d')
     end_dt = end_dt.strftime('%Y%m%d')
-    return _make_query(db, table, start_dt, end_dt, dscfg, for_count)
+    return _make_query(db, table, start_dt, end_dt, dscfg, mode, cols)
 
 
 def get_query_rows_rel(cursor, db, table, before, offset, dscfg):
+    """상대 날자로 쿼리 대상 행수 구함."""
     info("get_query_rows_rel")
-    query = make_query_rel(db, table, before, offset, dscfg, True)
+    query = make_query_rel(db, table, before, offset, dscfg, "count")
     info("  query: {}".format(query))
     rows = cursor.execute(query).fetchone()
     return rows[0]
 
 
 def get_query_rows_abs(cursor, db, table, start_dt, end_dt, dscfg):
+    """절대 날자로 쿼리 대상 행수 구함."""
     info("get_query_rows_abs")
-    query = make_query_abs(db, table, start_dt, end_dt, dscfg, True)
+    query = make_query_abs(db, table, start_dt, end_dt, dscfg, "count")
     info("  query: {}".format(query))
     rows = cursor.execute(query).fetchone()
     return rows[0]
+
+
+def get_query_preview_rel(cursor, db, table, before, offset, dscfg):
+    """상대 날자로 쿼리 프리뷰 구함."""
+    info("get_query_preview_rel: {} - {}".format(db, table))
+    query = make_query_rel(db, table, before, offset, dscfg, "preview")
+    info("  query: {}".format(query))
+    rows = cursor.execute(query).fetchall()
+    return rows
+
+
+def get_query_preview_abs(cursor, db, table, start_dt, end_dt, dscfg):
+    """절대 날자로 쿼리 프리뷰 구함."""
+    info("get_query_preview_abs: {} - {}".format(db, table))
+    query = make_query_abs(db, table, start_dt, end_dt, dscfg, "preview")
+    info("  query: {}".format(query))
+    rows = cursor.execute(query).fetchall()
+    return rows
+
+
+def get_table_columns(cursor, db, table):
+    """테이블의 컬럼명을 얻음."""
+    info("get_table_columns: {} - {}".format(db, table))
+    query = "SHOW COLUMNS IN {}.{}".format(db, table)
+    info("  query: {}".format(query))
+    cols = cursor.execute(query).fetchall()
+    cols = [col[0].strip() for col in cols]
+    return cols
 
 
 def get_local_version():

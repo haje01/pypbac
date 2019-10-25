@@ -2,6 +2,8 @@
 import time
 from configparser import ConfigParser
 from copy import deepcopy
+from collections import defaultdict
+from functools import partial
 
 from tkinter import *
 from tkinter import ttk
@@ -10,7 +12,7 @@ from tkinter.simpledialog import askstring
 from pyathena import connect
 
 from datepicker import Datepicker
-from dialog import Dialog, ModelessDlg, ConfirmDlg, VersionDlg
+from dialog import Dialog, ModelessDlg, ConfirmDlg, VersionDlg, TableDlg
 from util import *
 
 WIN_WIDTH = 370
@@ -33,6 +35,7 @@ def save_config(cfg):
     cfg['default']['version'] = get_local_version()
 
     info("Save config file to {}".format(cfg_path))
+    info({section: dict(cfg[section]) for section in cfg.sections() if section != 'aws'})
     with open(cfg_path, 'w') as cfgfile:
         cfg.write(cfgfile)
     org_cfg = deepcopy(cfg)
@@ -198,6 +201,7 @@ class Profile:
         global pro
         self.name = name
         self.selected_tables = {}
+        self.selected_columns = defaultdict(lambda: defaultdict(lambda: list()))
         self.first_sel_db = None
         self.proidx = proidx
 
@@ -283,6 +287,7 @@ class Profile:
         self.tbl_frame.pack(side=TOP, fill=None, expand=False, padx=20, pady=(10, 5))
         self.sel_frame.pack(side=TOP)
         self.tbl_ckbs = []
+        self.tbl_ckbbs = []
         self.tbl_cvs = []
 
         # 테이블 전체 선택/취소
@@ -326,6 +331,22 @@ class Profile:
 
         self.disable_targets = [self.st_dp, self.ed_dp, self.all_btn, self.none_btn, self.lct_etr, 
                                 self.db_combo, self.rel_rbt, self.abs_rbt, self.rel_bg_etr, self.rel_off_etr, self.flush_btn]
+    
+    def select_table(self, table):
+        """현재 DB에서 지정 테이블을 선택."""
+        for ti, tbl in enumerate(self.tbl_ckbs):
+            if tbl['text'] == table:
+                self.tbl_cvs[ti].set(1)
+        self.update_sel_tables()
+        self.update_targets_text()
+
+    def unselect_table(self, table):
+        """현재 DB에서 지정 테이블을 비선택."""
+        for ti, tbl in enumerate(self.tbl_ckbs):
+            if tbl['text'] == table:
+                self.tbl_cvs[ti].set(0)
+        self.update_sel_tables()
+        self.update_targets_text()
 
     def set_databases(self, databases):
         self.db_combo['values'] = databases
@@ -405,7 +426,14 @@ class Profile:
             tables = eval(pcfg[key])
             if self.first_sel_db is None and len(tables) > 0:
                 self.first_sel_db = db
-            self.selected_tables[db] = tables
+
+            self.selected_tables[db] = []
+            for tbl in tables:
+                # 선택된 컬럼 정보 처리
+                if type(tbl) is not str:
+                    tbl, tcols = tbl
+                    self.selected_columns[db][tbl] = tcols
+                self.selected_tables[db].append(tbl)
 
         if 'cache_valid_hour' in pcfg:
             cache_valid_hour = int(pcfg['cache_valid_hour'])
@@ -424,35 +452,65 @@ class Profile:
         else:
             selected = []
 
-        num_tbl = len(tables)
-        for ckbs in self.tbl_ckbs:
-            ckbs.destroy()
+        for ckb in self.tbl_ckbs:
+            ckb.destroy()
+        for ckbb in self.tbl_ckbbs:
+            ckbb.destroy()
         self.tbl_ckbs = []
+        self.tbl_ckbbs = []
         self.tbl_cvs = []
         self.tbl_text.configure(state='normal')
         self.tbl_text.delete('1.0', END)
+
+        def make_on_table(tbl):
+            return lambda: on_table(self, db, tbl)
 
         for i, tbl in enumerate(tables):
             cv = IntVar()
             if tbl in selected:
                 cv.set(1)
-            ckb = Checkbutton(self.tbl_text, text=tbl, variable=cv, command=on_check)
-            self.tbl_text.window_create("end", window=ckb)
+            ckbf = Frame(self.tbl_text)
+            ckb = Checkbutton(ckbf, text=tbl, variable=cv, command=on_check)
+            ckb.pack(side=LEFT)
+            ckbb = Button(ckbf, text='+', command=make_on_table(tbl))
+            ckbb.pack(side=RIGHT, padx=(13,0))
+            self.tbl_text.window_create("end", window=ckbf)
             self.tbl_text.insert("end", "\n")
             self.tbl_ckbs.append(ckb)
+            self.tbl_ckbbs.append(ckbb)
             self.tbl_cvs.append(cv)
+
+        print(self.tbl_ckbbs)
 
         self.tbl_text.configure(state='disabled')
         self.tbl_frame.update()
 
     def update_sel_tables(self):
         """DB의 선택된 테이블 기억."""
-        info("update_sel_tables for {}".format(self.cur_db))
+        db = self.cur_db
+        info("update_sel_tables for {}".format(db))
         selected = []
         for i, cv in enumerate(self.tbl_cvs):
+            tbl = self.tbl_ckbs[i]['text']
             if cv.get() == 1:
-                selected.append(self.tbl_ckbs[i]['text'])
-        self.selected_tables[self.cur_db] = selected
+                selected.append(tbl)
+            else:
+                # 선택되지 않은 테이블의 컬럼들은 지워 줌
+                self.selected_columns[db][tbl] = []
+        self.selected_tables[db] = selected
+
+    def get_ui_target_date(self):
+        """현재 UI 기준 대상 날자 얻기."""
+        if self.ttype.get() == 'rel':
+            # 상대 시간
+            before = self.rel_bg_var.get()
+            offset = self.rel_off_var.get()
+            return 'rel', before, offset
+        else:
+            # 절대 시간
+            start = self.st_dp.get()
+            end = self.ed_dp.get()
+            return 'abs', start, end
 
     def validate_cfg(self):
         """프로파일 설정 값 확인.
@@ -464,6 +522,11 @@ class Profile:
         """
         info("validate_cfg")
         pcfg = {}  # 프로파일 설정
+
+        db_name = self.db_combo.get()
+        if len(db_name) == 0:
+            messagebox.showerror("에러", "선택된 DB가 없습니다.")
+            return
 
         if self.ttype.get() == 'rel':
             # 상대 시간
@@ -482,16 +545,11 @@ class Profile:
             # 절대 시간
             start = self.st_dp.get()
             end = self.ed_dp.get()
-            db_name = self.db_combo.get()
-
             if len(start) == 0:
                 messagebox.showerror("에러", "시작일을 선택해주세요.")
                 return
             elif len(end) == 0:
                 messagebox.showerror("에러", "종료일을 선택해주세요.")
-                return
-            elif len(db_name) == 0:
-                messagebox.showerror("에러", "선택된 DB가 없습니다.")
                 return
 
             start = parse(start).date()
@@ -526,7 +584,13 @@ class Profile:
 
         # 선택된 테이블 기억
         for db in self.selected_tables.keys():
-            tables = self.selected_tables[db]
+            tables = []
+            for tbl in self.selected_tables[db]:
+                # 선택된 컬럼 정보가 있으면
+                if len(self.selected_columns[db][tbl]) > 0:
+                    # 컬럼 정보 포함
+                    tbl = (tbl, self.selected_columns[db][tbl])
+                tables.append(tbl)
             if len(tables) > 0:
                 pcfg["db_" + db] = str(tables)
 
@@ -551,15 +615,15 @@ class Profile:
         self.target_text['state'] = 'disabled'
 
     def disable_controls(self):
-        for ctrl in (self.disable_targets + self.tbl_ckbs):
+        for ctrl in (self.disable_targets + self.tbl_ckbs + self.tbl_ckbbs):
             ctrl['state'] = 'disabled'
-        self.tbl_text.configure(state='disabled')
+        # self.tbl_text.configure(state='disabled')
 
     def enable_controls(self):
-        for ctrl in (self.disable_targets + self.tbl_ckbs):
+        for ctrl in (self.disable_targets + self.tbl_ckbs + self.tbl_ckbbs):
             ctrl['state'] = 'normal'
         self.db_combo['state'] = 'readonly'
-        self.tbl_text.configure(state='normal')
+        # self.tbl_text.configure(state='disabled')
 
 
 info("Construct GUI.")
@@ -670,6 +734,44 @@ def get_tables(db):
 
 notebook.select(0)
 pro_names = list(profiles.keys())
+
+
+def on_table(dlg, db, table):
+    set_wait_cursor()
+    disable_controls()
+
+    def on_apply(selected):
+        info("on_apply: {}.{}: {}".format(db, table, selected))
+        if selected == '*':
+            selected = []
+            dlg.select_table(table)
+        else:
+            if len(selected) > 0:
+                dlg.select_table(table)
+            else:
+                dlg.unselect_table(table)
+        dlg.selected_columns[db][table] = selected
+
+    def _table():
+        try:
+            heads = get_table_columns(cursor, db, table)
+            tdate = dlg.get_ui_target_date()
+            if tdate[0] == 'rel':
+                before, offset = tdate[1:]
+                rows = get_query_preview_rel(cursor, db, table, before, offset, None)
+            else:
+                start, end = tdate[1:]
+                rows = get_query_preview_abs(cursor, db, table, start, end, None)
+
+            selected = []
+            if table in dlg.selected_columns[db]:
+                selected = dlg.selected_columns[db][table]
+            TableDlg(win, "{} 테이블 상세".format(table), heads, rows, selected, on_apply)
+        finally:
+            enable_controls()
+            unset_wait_cursor()
+
+    win.after(100, _table)
 
 
 def on_check():

@@ -1,6 +1,7 @@
 from tkinter import *
 import os
 import webbrowser
+from table import Table
 
 
 class Dialog(Toplevel):
@@ -117,6 +118,10 @@ class ModalDlg:
         top.resizable(False, False)
         top.title(title)
 
+        top.focus_set()
+        top.grab_set()
+        top.transient(parent)
+
 
 class ConfirmDlg(ModalDlg):
 
@@ -137,6 +142,77 @@ class ConfirmDlg(ModalDlg):
         Label(self.frame, text=message).pack(side=LEFT)
         self.frame.pack(side=TOP, pady=12)
         Button(self.top, text="OK", command=self.top.master.destroy, width=8).pack(side=TOP)
+
+
+def on_column():
+    pass
+
+
+class TableDlg(ModalDlg):
+
+    def __init__(self, parent, title, heads, rows, selected, on_apply, width=900, height=300, x=0, y=100):
+        super().__init__(parent, title, width, height, x, y)
+        self.top.resizable(True, True)
+        self.frame = Frame(self.top)
+        self.frame.grid_propagate(False)
+        self.canvas = Canvas(self.frame, height=140)
+        self.vsb = Scrollbar(self.frame, orient="vertical", command=self.canvas.yview)
+        self.vsb.pack(side='right', fill='y')
+        self.hsb = Scrollbar(self.frame, orient="horizontal", command=self.canvas.xview)
+        self.hsb.pack(side="bottom", fill="x")
+        self.canvas.configure(xscrollcommand=self.hsb.set, yscrollcommand=self.vsb.set)
+        self.canvas.pack(side=TOP, fill='both', expand=True)
+        self.cframe = Frame(self.canvas)
+        self.canvas.create_window((0, 0), window=self.cframe, anchor='nw')
+        self.cvs = []
+        self.ckbs = []
+        self.on_apply = on_apply
+
+        for ci, head in enumerate(heads):
+            bg = 'gray70' if ci % 2 == 0 else 'gray80'
+            cv = IntVar()
+            if len(selected) == 0 or head in selected:
+                cv.set(1)
+            self.cvs.append(cv)
+            font = "Helvetica 10 bold"
+            ckb = Checkbutton(self.cframe, text=head, variable=cv, background=bg, font=font, command=on_column)
+            ckb.grid(row=0, column=ci, sticky='nsew', ipadx=5, ipady=2)
+            self.ckbs.append(ckb)
+
+        for ri, row in enumerate(rows):
+            for ci, val in enumerate(row):
+                bg = 'gray85' if ci % 2 == 0 else 'gray95'
+                lbl = Label(self.cframe, text=val, background=bg)
+                lbl.grid(row=ri + 1, column=ci, sticky='nsew', ipadx=5, ipady=1)
+
+        self.cframe.update_idletasks()
+        self.frame.pack(side=TOP, fill='both', expand=True, padx=15, pady=(15, 10))
+        self.canvas.config(scrollregion=self.canvas.bbox('all'))
+        self.canvas.update()
+
+        self.bframe = Frame(self.top)
+        self.bframe.pack(side=TOP, pady=(0,20))
+        Button(self.bframe, text="Select All", command=self.on_all, width=11, default=ACTIVE).pack(side=LEFT, padx=10)
+        Button(self.bframe, text="Select None", command=self.on_none, width=11, default=ACTIVE).pack(side=LEFT, padx=(10, 40))
+        Button(self.bframe, text="OK", command=self.on_ok, width=8, default=ACTIVE).pack(side=LEFT, padx=10)
+        Button(self.bframe, text="Cancel", command=self.top.destroy, width=8).pack(side=LEFT, padx=10)
+
+    def on_all(self):
+        for cv in self.cvs:
+            cv.set(1)
+
+    def on_none(self):
+        for cv in self.cvs:
+            cv.set(0)
+
+    def on_ok(self):
+        sel_idx = [ci for ci, cv in enumerate(self.cvs) if cv.get() == 1]
+        if len(sel_idx) < len(self.ckbs):
+            selected = [self.ckbs[si]['text'] for si in sel_idx]
+            self.on_apply(selected)
+        else:
+            self.on_apply('*')
+        self.top.destroy()
 
 
 class VersionDlg(ModalDlg):
