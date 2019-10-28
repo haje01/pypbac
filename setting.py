@@ -510,6 +510,8 @@ class Profile:
             # 절대 시간
             start = self.st_dp.get()
             end = self.ed_dp.get()
+            start = parse(start).date()
+            end = parse(end).date()
             return 'abs', start, end
 
     def validate_cfg(self):
