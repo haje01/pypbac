@@ -1,5 +1,6 @@
 import os 
 import re
+import sys
 import logging
 import hashlib
 from configparser import ConfigParser
@@ -8,6 +9,7 @@ from datetime import datetime, timedelta, date
 
 from dateutil.parser import parse
 import requests
+import win32api
 
 LOG_FILE = 'log.txt'
 CFG_FILE = 'config.txt'
@@ -26,11 +28,22 @@ cache_base_dir = os.path.join(proj_dir, 'cache')
 log_path = os.path.join(proj_dir, LOG_FILE)
 cfg_path = os.path.join(proj_dir, CFG_FILE)
 
+
+def make_dir(dir_name):
+    info("make_dir: {}".format(dir_name))
+    try:
+        os.mkdir(dir_name)
+    except PermissionError as e:
+        error(e)
+        win32api.MessageBox(0, "{} 디렉토리를 생성할 수 없습니다. 관련 프로그램 종료 후 다시 시도해 주세요.".format(dir_name))
+        sys.exit(-1)
+
+
 # 필요한 디렉토리 생성
 if not os.path.isdir(proj_dir):
-    os.mkdir(proj_dir)
+    make_dir(proj_dir)
 if not os.path.isdir(cache_base_dir):
-    os.mkdir(cache_base_dir)
+    make_dir(cache_base_dir)
 
 
 logging.basicConfig(
@@ -121,16 +134,18 @@ def check_cache_dir(pro_name):
     """
     cache_dir = get_cache_dir(pro_name)
     if not os.path.isdir(cache_dir):
-        os.mkdir(cache_dir)
+        make_dir(cache_dir)
     return cache_dir
 
 
 def del_cache(pro_name):
+    info("del_cache for {}".format(pro_name))
     pcache_dir = get_cache_dir(pro_name)
     if os.path.isdir(pcache_dir):
-        warning("Remove old profile cache dir: {}".format(pcache_dir))
-        rmtree(pcache_dir)
-    os.mkdir(pcache_dir)
+        warning("  Remove old profile cache dir: {}".format(pcache_dir))
+        rmtree(pcache_dir, ignore_errors=True)
+    info("  Make new profile cache dir: {}".format(pcache_dir))
+    make_dir(pcache_dir)
 
 
 def make_query_rel(db, table, before, offset, dscfg, mode, cols=None):
