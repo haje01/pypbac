@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, date
 from dateutil.parser import parse
 import requests
 import win32api
+import pyathena
 
 LOG_FILE = 'log.txt'
 CFG_FILE = 'config.txt'
@@ -266,12 +267,23 @@ def make_query_abs(db, table, start_dt, end_dt, dscfg, mode, cols=None):
     return _make_query(db, table, start_dt, end_dt, dscfg, mode, cols)
 
 
+def query_exec(cursor, query):
+    try:
+        cobj = cursor.execute(query)
+    except pyathena.error.OperationalError as e:
+        error(e)
+        win32api.MessageBox(0, "쿼리 작업 에러:\n{}".format(e))
+        sys.exit(-1)
+    else:
+        return cobj
+
+
 def get_query_rows_rel(cursor, db, table, before, offset, dscfg):
     """상대 날자로 쿼리 대상 행수 구함."""
     info("get_query_rows_rel")
     query = make_query_rel(db, table, before, offset, dscfg, "count")
     info("  query: {}".format(query))
-    rows = cursor.execute(query).fetchone()
+    rows = query_exec(cursor, query).fetchone()
     return rows[0]
 
 
@@ -280,7 +292,7 @@ def get_query_rows_abs(cursor, db, table, start_dt, end_dt, dscfg):
     info("get_query_rows_abs")
     query = make_query_abs(db, table, start_dt, end_dt, dscfg, "count")
     info("  query: {}".format(query))
-    rows = cursor.execute(query).fetchone()
+    rows = query_exec(cursor, query).fetchone()
     return rows[0]
 
 
@@ -289,7 +301,7 @@ def get_query_preview_rel(cursor, db, table, before, offset, dscfg):
     info("get_query_preview_rel: {} - {}".format(db, table))
     query = make_query_rel(db, table, before, offset, dscfg, "preview")
     info("  query: {}".format(query))
-    rows = cursor.execute(query).fetchall()
+    rows = query_exec(cursor, query).fetchall()
     return rows
 
 
@@ -298,7 +310,7 @@ def get_query_preview_abs(cursor, db, table, start_dt, end_dt, dscfg):
     info("get_query_preview_abs: {} - {}".format(db, table))
     query = make_query_abs(db, table, start_dt, end_dt, dscfg, "preview")
     info("  query: {}".format(query))
-    rows = cursor.execute(query).fetchall()
+    rows = query_exec(cursor, query).fetchall()
     return rows
 
 
@@ -307,7 +319,7 @@ def get_table_columns(cursor, db, table):
     info("get_table_columns: {} - {}".format(db, table))
     query = "SHOW COLUMNS IN {}.{}".format(db, table)
     info("  query: {}".format(query))
-    cols = cursor.execute(query).fetchall()
+    cols = query_exec(cursor, query).fetchall()
     cols = [col[0].strip() for col in cols]
     return cols
 

@@ -480,8 +480,6 @@ class Profile:
             self.tbl_ckbbs.append(ckbb)
             self.tbl_cvs.append(cv)
 
-        print(self.tbl_ckbbs)
-
         self.tbl_text.configure(state='disabled')
         self.tbl_frame.update()
 
@@ -512,6 +510,7 @@ class Profile:
             end = self.ed_dp.get()
             start = parse(start).date()
             end = parse(end).date()
+
             return 'abs', start, end
 
     def validate_cfg(self):
