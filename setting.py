@@ -180,6 +180,8 @@ def on_save():
         for pro in profiles.values():
             pcfg = pro.validate_cfg()
             if pcfg is None:
+                enable_controls()
+                unset_wait_cursor()                
                 return
             sname = "profile.{}".format(pro.name)
             _cfg[sname] = pcfg            
