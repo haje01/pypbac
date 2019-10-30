@@ -51,7 +51,7 @@ logging.basicConfig(
      filename=log_path,
      level=logging.INFO, 
      format= '[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s',
-     datefmt='%H:%M:%S'
+     datefmt='%m-%d %H:%M:%S'
  )
 
 # set up logging to console
