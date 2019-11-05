@@ -177,6 +177,7 @@ def on_save():
         _cfg['aws'] = cfg['aws']
 
         # 설정 검증
+        # 모든 프로파일에 대해서
         for pro in profiles.values():
             pcfg = pro.validate_cfg()
             if pcfg is None:
@@ -204,7 +205,7 @@ class Profile:
         self.name = name
         self.selected_tables = {}
         self.selected_columns = defaultdict(lambda: defaultdict(lambda: list()))
-        self.first_sel_db = None
+        self.first_sel_db = self.org_pcfg = None
         self.proidx = proidx
 
         #
@@ -564,7 +565,31 @@ class Profile:
             pcfg['start'] = str(start)
             pcfg['end'] = str(end)
 
+        # 선택된 테이블 기억
+        for db in self.selected_tables.keys():
+            tables = []
+            for tbl in self.selected_tables[db]:
+                # 선택된 컬럼 정보가 있으면
+                if len(self.selected_columns[db][tbl]) > 0:
+                    # 컬럼 정보 포함
+                    tbl = (tbl, self.selected_columns[db][tbl])
+                tables.append(tbl)
+            if len(tables) > 0:
+                pcfg["db_" + db] = str(tables)
 
+        # 캐쉬 유효 시간
+        cache_valid_hour = self.lct_val.get()
+        if cache_valid_hour <= 0:
+            messagebox.showerror("에러", "캐쉬 수명은 최소 0보다 커야 합니다.")
+            return
+        pcfg['cache_valid_hour'] = str(self.lct_val.get())
+
+        # 프로파일이 변하지 않았으면 여기서 반환
+        if self.org_pcfg == pcfg:
+            info("Skip table rows check for profile '{}'".format(self.name))
+            return pcfg
+
+        info("Check table rows for profile '{}'".format(self.name))
         # 가져올 행수를 체크
         tbl_cnt = 0
         for db, tbls in self.selected_tables.items():
@@ -584,25 +609,6 @@ class Profile:
         if tbl_cnt == 0:
             messagebox.showerror("에러", "선택된 테이블이 없습니다.")
             return
-
-        # 선택된 테이블 기억
-        for db in self.selected_tables.keys():
-            tables = []
-            for tbl in self.selected_tables[db]:
-                # 선택된 컬럼 정보가 있으면
-                if len(self.selected_columns[db][tbl]) > 0:
-                    # 컬럼 정보 포함
-                    tbl = (tbl, self.selected_columns[db][tbl])
-                tables.append(tbl)
-            if len(tables) > 0:
-                pcfg["db_" + db] = str(tables)
-
-        # 캐쉬 유효 시간
-        cache_valid_hour = self.lct_val.get()
-        if cache_valid_hour <= 0:
-            messagebox.showerror("에러", "캐쉬 수명은 최소 0보다 커야 합니다.")
-            return
-        pcfg['cache_valid_hour'] = str(self.lct_val.get())
 
         return pcfg
 
