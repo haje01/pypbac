@@ -162,7 +162,7 @@ def make_query_rel(db, table, before, offset, dscfg, mode, no_part=False, cols=N
         no_part: 테이블에 파티션이 없음. 기본 False
         cols: 명시적 선택 컬럼,
     """
-    assert before > 0 and offset > 0
+    assert before >= 0 and offset > 0
     today = datetime.today().date()
     end_dt = today - timedelta(days=before)
     start_dt = end_dt - timedelta(days=offset - 1)
@@ -235,10 +235,11 @@ def _make_query(db, table, start_dt, end_dt, dscfg, mode, no_part, cols):
     elif mode == 'count':
         query = "SELECT COUNT(*) AS cnt"
 
-    # 파티션이 있으면, 날자로 제한
+    # 파티션이 없으면, 날자 제한도 없음
     if no_part:
         warning("Table '{}' has no partition. Proceed without filtering.".format(table))
         query += " FROM {}.{}".format(db, table)
+    # 파티션이 있으면, 날자로 제한
     else:
         if start_dt == end_dt:
             query += " FROM {}.{} WHERE (year || month || day) = '{}'".\

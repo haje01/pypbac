@@ -536,7 +536,7 @@ class Profile:
             # 상대 시간
             before = self.rel_bg_var.get()
             offset = self.rel_off_var.get()
-            if before <= 0:
+            if before < 0:
                 messagebox.showerror("에러", "몇 일 전부터 시작할지 양의 정수로 지정해 주세요.")
                 return
             elif offset <= 0:
@@ -595,11 +595,12 @@ class Profile:
         for db, tbls in self.selected_tables.items():
             for tbl in tbls:
                 tbl_cnt += 1
+                no_part = no_part_table(cursor, db, tbl)                
                 if self.ttype.get() == 'rel':
-                    cnt = get_query_rows_rel(cursor, db, tbl, before, offset, None)
+                    cnt = get_query_rows_rel(cursor, db, tbl, before, offset, None, no_part)
                 else:
-                    cnt = get_query_rows_abs(cursor, db, tbl, start, end, None)
-                info("'{}' '{}' has {} rows".format(db, tbl, cnt))
+                    cnt = get_query_rows_abs(cursor, db, tbl, start, end, None, no_part)
+                info("'{}'.'{}' has {} rows".format(db, tbl, cnt))
                 if cnt > WARN_ROWS:
                     rv = messagebox.askquestion("경고", "{} DB의 {} 테이블의 행수가 매우 큽니다 ({:,} 행)."
                                                 "\n정말 가져오겠습니까?".format(db, tbl, cnt))
