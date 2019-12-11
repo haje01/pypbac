@@ -30,21 +30,23 @@ log_path = os.path.join(proj_dir, LOG_FILE)
 cfg_path = os.path.join(proj_dir, CFG_FILE)
 
 
-def make_dir(dir_name):
-    info("make_dir: {}".format(dir_name))
+def make_dir(dir_name, log=True):
+    if log:
+        info("make_dir: {}".format(dir_name))
     try:
         os.mkdir(dir_name)
     except PermissionError as e:
-        error(e)
+        if log:
+            error(e)
         win32api.MessageBox(0, "{} 디렉토리를 생성할 수 없습니다. 관련 프로그램 종료 후 다시 시도해 주세요.".format(dir_name))
         sys.exit(-1)
 
 
 # 필요한 디렉토리 생성
 if not os.path.isdir(proj_dir):
-    make_dir(proj_dir)
+    make_dir(proj_dir, False)
 if not os.path.isdir(cache_base_dir):
-    make_dir(cache_base_dir)
+    make_dir(cache_base_dir, False)
 
 
 logging.basicConfig(

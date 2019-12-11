@@ -114,6 +114,7 @@ def on_ttype():
 
 
 def disable_controls():
+    info("disable_controls")
     global prev_tab, win
 
     for pro in profiles.values():
@@ -528,8 +529,9 @@ class Profile:
         pcfg = {}  # 프로파일 설정
 
         db_name = self.db_combo.get()
+        err_head = "프로파일 에러: {}".format(self.name)
         if len(db_name) == 0:
-            messagebox.showerror("에러", "선택된 DB가 없습니다.")
+            messagebox.showerror(err_head, "선택된 DB가 없습니다.")
             return
 
         if self.ttype.get() == 'rel':
@@ -537,10 +539,10 @@ class Profile:
             before = self.rel_bg_var.get()
             offset = self.rel_off_var.get()
             if before < 0:
-                messagebox.showerror("에러", "몇 일 전부터 시작할지 양의 정수로 지정해 주세요.")
+                messagebox.showerror(err_head, "몇 일 전부터 시작할지 양의 정수로 지정해 주세요.")
                 return
             elif offset <= 0:
-                messagebox.showerror("에러", "몇 일치 데이터를 가져올지 양의 정수로 지정해 주세요.")
+                messagebox.showerror(err_head, "몇 일치 데이터를 가져올지 양의 정수로 지정해 주세요.")
                 return
             pcfg['ttype'] = 'rel'
             pcfg['before'] = str(before)
@@ -550,16 +552,16 @@ class Profile:
             start = self.st_dp.get()
             end = self.ed_dp.get()
             if len(start) == 0:
-                messagebox.showerror("에러", "시작일을 선택해주세요.")
+                messagebox.showerror(err_head, "시작일을 선택해주세요.")
                 return
             elif len(end) == 0:
-                messagebox.showerror("에러", "종료일을 선택해주세요.")
+                messagebox.showerror(err_head, "종료일을 선택해주세요.")
                 return
 
             start = parse(start).date()
             end = parse(end).date()
             if start > end:
-                messagebox.showerror("에러", "종료일이 시작일보다 빠릅니다.")
+                messagebox.showerror(err_head, "종료일이 시작일보다 빠릅니다.")
                 return
             pcfg['ttype'] = 'abs'
             pcfg['start'] = str(start)
@@ -580,7 +582,7 @@ class Profile:
         # 캐쉬 유효 시간
         cache_valid_hour = self.lct_val.get()
         if cache_valid_hour <= 0:
-            messagebox.showerror("에러", "캐쉬 수명은 최소 0보다 커야 합니다.")
+            messagebox.showerror(err_head, "캐쉬 수명은 최소 0보다 커야 합니다.")
             return
         pcfg['cache_valid_hour'] = str(self.lct_val.get())
 
@@ -608,7 +610,7 @@ class Profile:
                         return
 
         if tbl_cnt == 0:
-            messagebox.showerror("에러", "선택된 테이블이 없습니다.")
+            messagebox.showerror(err_head, "선택된 테이블이 없습니다.")
             return
 
         return pcfg
@@ -644,10 +646,12 @@ win.geometry("{}x{}+100+100".format(WIN_WIDTH, WIN_HEIGHT))
 
 
 def add_profile(win, pro_name):
+    info("add_profile - {}".format(pro_name))
     proidx = len(profiles)
     pro = Profile(pro_name, win, notebook, proidx)
     if databases is not None:
         pro.set_databases(databases)
+        pro.db_set()
     profiles[pro_name] = pro
     notebook.select(proidx)
     return pro
@@ -715,11 +719,13 @@ notebook.pack(pady=(15, 0), anchor=NE)
 
 # 설정 읽기
 need_aws = False
+num_profile = 0
 if os.path.isfile(cfg_path):
     try:
         cfg, _ = load_config()
         # 모든 프로파일 설정
         for sname in iter_profile_sect(cfg):
+            num_profile += 1
             pro_name = sname[8:]
             pcfg = cfg[sname]
             pro = add_profile(win, pro_name)
@@ -735,6 +741,11 @@ if os.path.isfile(cfg_path):
 else:
     messagebox.showwarning("경고", "설정 파일이 없습니다. 먼저 AWS 계정부터 설정 해주세요.")
     need_aws = True
+
+
+# 프로파일이 없는 경우 기본 등록
+if num_profile == 0:
+    add_profile(win, "default")
 
 
 def get_tables(db):
@@ -815,6 +826,7 @@ global_disable_targets = [aws_btn, save_btn]
 
 
 def enable_controls():
+    info("enable_controls")
     for pro in profiles.values():
         pro.enable_controls()
 
@@ -824,6 +836,22 @@ def enable_controls():
     # for item in notebook.tabs():
     #     notebook.tab(item, state='normal')
     notebook.select(prev_tab)
+
+
+def _first_db_set():
+    info("_first_db_set")
+    for pro in profiles.values():
+        pro.db_set()
+
+    # 최신 버전 확인
+    rel = get_latest_release()
+    info("version: local {} - remote {}".format(version, rel[0]))
+    if rel is not None and rel[0] > version:
+        rver, rtitle, rlines = rel[0], rel[1], rel[2]
+        VersionDlg(win, "최신 버전({}) 정보".format(rel[0]), rtitle, rlines)
+
+    enable_controls()
+    unset_wait_cursor()
 
 
 def try_connect():
@@ -854,7 +882,12 @@ def try_connect():
             aws_btn['state'] = 'normal'
         else:
             warning("Connect success.")
-            enable_controls()
+            # 모든 프로파일에 DB 설정
+            if databases is not None:
+                for k, pro in profiles.items():
+                    pro.set_databases(databases)
+            win.after(10, _first_db_set)                    
+            # enable_controls()
         finally:
             wait_dlg.top.destroy()
             unset_wait_cursor()
@@ -869,36 +902,15 @@ def try_connect():
 
 if not need_aws:
     try_connect()
-    # self.first_sel_db = db_combo.current(find_first_db_idx())
+    set_wait_cursor()
+    disable_controls()
 else:
     disable_controls()
     aws_btn['state'] = 'normal'
 
 
-# 모든 프로파일에 DB 설정
-set_wait_cursor()
-disable_controls()
-
-for k, pro in profiles.items():
-    pro.set_databases(databases)
-
-def _db_set():
-    for sname in iter_profile_sect(cfg):
-        pname = sname[8:]
-        pro = profiles[pname]
-        pro.db_set()
-
-    # 최신 버전 확인
-    rel = get_latest_release()
-    info("version: local {} - remote {}".format(version, rel[0]))
-    if rel is not None and rel[0] > version:
-        rver, rtitle, rlines = rel[0], rel[1], rel[2]
-        VersionDlg(win, "최신 버전({}) 정보".format(rel[0]), rtitle, rlines)
-
-    enable_controls()
-    unset_wait_cursor()
-
-win.after(10, _db_set)
+# if databases is not None:
+#     win.after(10, _db_set)
 
 win.mainloop()
 
