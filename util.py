@@ -200,6 +200,8 @@ def _add_column_query(db, table, query, dscfg):
 
 def _add_filter_query(db, table, query, dscfg):
     """쿼리에 필터 추가."""
+
+    info("_add_filter_query: {}".format(dscfg))
     for sect in dscfg.keys():
         if not sect.startswith('filter'):
             continue
@@ -219,7 +221,7 @@ def _add_filter_query(db, table, query, dscfg):
         if add:
             fcfg = dscfg[sect]
             for line in fcfg.values():
-                query += " AND {}".format(line)
+                query += " {}".format(line)
     return query
 
 
@@ -241,6 +243,8 @@ def _make_query(db, table, start_dt, end_dt, dscfg, mode, no_part, cols):
     if no_part:
         warning("Table '{}' has no partition. Proceed without filtering.".format(table))
         query += " FROM {}.{}".format(db, table)
+        if dscfg is not None:
+            query += ' WHERE'
     # 파티션이 있으면, 날자로 제한
     else:
         if start_dt == end_dt:
@@ -250,11 +254,15 @@ def _make_query(db, table, start_dt, end_dt, dscfg, mode, no_part, cols):
             query += " FROM {}.{} WHERE (year || month || day) >= '{}' AND "\
                     "(year || month || day) <= '{}'".\
                     format(db, table, start_dt, end_dt)
-            if dscfg is not None:                
-                query = _add_filter_query(db, table, query, dscfg)
+        if dscfg is not None:
+            query += ' AND'
+
+    if dscfg is not None:                
+        query = _add_filter_query(db, table, query, dscfg)
     
     if mode == 'preview':
         query += " LIMIT 50"
+
     return query
 
 
@@ -311,7 +319,6 @@ def get_query_preview_rel(cursor, db, table, before, offset, dscfg):
     """상대 날자로 쿼리 프리뷰 구함."""
     info("get_query_preview_rel: {} - {}".format(db, table))
     no_part = no_part_table(cursor, db, table)
-    import pdb; pdb.set_trace()
     query = make_query_rel(db, table, before, offset, dscfg, "preview", no_part)
     try:
         info("  query: {}".format(query))

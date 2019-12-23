@@ -10,7 +10,8 @@ import matplotlib.pyplot
 os.chdir(u'E:/works/pypbac/temp')
 matplotlib.pyplot.show = lambda args=None,kw=None: ()
 # Original Script. Please update your script content here and once completed copy below section back to the original editing window #
-dd
+[filter]
+1: country = 'kr'
 
 # Epilog - Auto Generated #
 os.chdir(u'E:/works/pypbac/temp')
