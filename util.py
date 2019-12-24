@@ -198,10 +198,9 @@ def _add_column_query(db, table, query, dscfg):
     return query
 
 
-def _add_filter_query(db, table, query, dscfg):
-    """쿼리에 필터 추가."""
-
-    info("_add_filter_query: {}".format(dscfg))
+def _get_extra_filters(db, table, dscfg):
+    """설정에서 추가 필터 얻음."""
+    filters = []
     for sect in dscfg.keys():
         if not sect.startswith('filter'):
             continue
@@ -221,8 +220,8 @@ def _add_filter_query(db, table, query, dscfg):
         if add:
             fcfg = dscfg[sect]
             for line in fcfg.values():
-                query += " {}".format(line)
-    return query
+                filters.append(line)
+    return filters
 
 
 def _make_query(db, table, start_dt, end_dt, dscfg, mode, no_part, cols):
@@ -239,26 +238,26 @@ def _make_query(db, table, start_dt, end_dt, dscfg, mode, no_part, cols):
     elif mode == 'count':
         query = "SELECT COUNT(*) AS cnt"
 
+    filters = []
     # 파티션이 없으면, 날자 제한도 없음
+    query += " FROM {}.{}".format(db, table)
     if no_part:
         warning("Table '{}' has no partition. Proceed without filtering.".format(table))
-        query += " FROM {}.{}".format(db, table)
-        if dscfg is not None:
-            query += ' WHERE'
     # 파티션이 있으면, 날자로 제한
     else:
         if start_dt == end_dt:
-            query += " FROM {}.{} WHERE (year || month || day) = '{}'".\
-                format(db, table, end_dt)
+            filters.append("(year || month || day) = '{}'".format(end_dt))
         else:
-            query += " FROM {}.{} WHERE (year || month || day) >= '{}' AND "\
-                    "(year || month || day) <= '{}'".\
-                    format(db, table, start_dt, end_dt)
-        if dscfg is not None:
-            query += ' AND'
+            filters.append("(year || month || day) >= '{}'".format(start_dt))
+            filters.append("(year || month || day) <= '{}'".format(end_dt))
 
     if dscfg is not None:                
-        query = _add_filter_query(db, table, query, dscfg)
+        filters += _get_extra_filters(db, table, dscfg)
+
+    if len(filters) > 0:
+        info("filters: {}".format(filters))
+        query += ' WHERE '
+        query += ' AND '.join(filters)
     
     if mode == 'preview':
         query += " LIMIT 50"
