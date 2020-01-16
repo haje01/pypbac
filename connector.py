@@ -160,7 +160,7 @@ def check_import_data(cfg, cfg_hash):
             dif = datetime.now() - created
             days, hours, mins = dif.days, dif.seconds // 3600, dif.seconds // 60
             cache_valid_hour = int(pcfg['cache_valid_hour'])
-            valid_life = dif.seconds < cache_valid_hour * 3600
+            valid_life = dif.total_seconds() < cache_valid_hour * 3600
             info("Cache created {} days {} hours {} minutess ago: {}".format(days, hours, mins, valid_life))
         else:
             valid_life = False
